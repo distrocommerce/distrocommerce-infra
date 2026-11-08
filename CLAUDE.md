@@ -28,7 +28,7 @@ only the stateful stores. Staging/production: one EKS cluster plus AWS managed s
 - `Makefile`: `doctor`, `up`, `reset` and per-component targets
 
 ## Fixed decisions (do not reopen unless asked)
-- Local ingress uses kind `extraPortMappings` (host 80/443 to NodePort 30080/30443). No cloud-provider-kind.
+- Local ingress uses kind `extraPortMappings` (host 8080/8443 to NodePort 30080/30443). No cloud-provider-kind.
 - Envoy Gateway is pinned to v1.9.3. PostgreSQL is exactly 18.6 everywhere. Local stores: Redis 8.10-alpine,
   MongoDB 9.0, Kafka 4.4.0. Pin every chart version; never deploy `latest`.
 - No Cilium, NetworkPolicy, service mesh or CDN for now (accepted debt). Tempo only (no Jaeger), no Mimir, no separate
@@ -43,8 +43,7 @@ only the stateful stores. Staging/production: one EKS cluster plus AWS managed s
 - Follow the runbook one step at a time and run a step's checks before starting the next.
 - The configs are drafts that have never been run. Before relying on a Helm value key run `helm show values <chart>` for the
   pinned chart version; before relying on a CRD field check the docs or `kubectl explain`. Say plainly when something is
-  unverified instead of guessing. Known unverified: the EnvoyProxy nodePort patch, the Backend API enable key, the Envoy
-  `telemetry.tracing` fields, the ZITADEL chart keys, the Loki filesystem values, the Tempo chart keys.
-- Makefile recipes need tab indentation. Start order matters: the docker network `kind` must exist before compose (see `make up`).
+  unverified instead of guessing. Known unverified: the Envoy `telemetry.tracing` fields, the ZITADEL chart keys, the Loki filesystem values, the Tempo chart keys.
+- Makefile recipes need tab indentation. Start order matters: the docker network `distro` (`DOCKER_NET` in the Makefile, passed to kind via `KIND_EXPERIMENTAL_DOCKER_NETWORK`) must exist before compose (see `make up`).
 - Never commit secrets (`.env` is ignored). Passwords in local manifests are development-only.
 - All repository content, comments and commit messages are in English.

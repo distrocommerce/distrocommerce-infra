@@ -1,5 +1,5 @@
 # Enables the Backend API (needed for JWKS fetch via an in-cluster Service).
-# Key path recalled from memory; verify with `helm show values` / controller logs.
+# Verified on gateway-helm v1.9.3: lands in the envoy-gateway-config ConfigMap; the controller watches Backend.
 config:
   envoyGateway:
     extensionApis:

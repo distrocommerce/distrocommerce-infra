@@ -28,7 +28,7 @@ in `charts/service-lib/`. Services use gRPC between themselves; REST is served b
 | CNI / network isolation | default CNI, no Cilium, no NetworkPolicy (accepted debt, revisit in a hardening phase) |
 | PostgreSQL | exactly 18.6 in every environment (RDS `auto_minor_version_upgrade=false`, bump all together) |
 | Observability | OTel Collector, Prometheus, Grafana, Tempo, Loki everywhere; no Mimir, no Jaeger, no separate tools cluster |
-| Local ingress | kind `extraPortMappings` (Mac 80/443 → NodePort 30080/30443), not cloud-provider-kind |
+| Local ingress | kind `extraPortMappings` (Mac 8080/8443 → NodePort 30080/30443), not cloud-provider-kind |
 | Diagrams | English only, no version numbers (label is just "PostgreSQL") |
 | Sizing targets (staging/prod) | 5,000 RPS steady / 20,000 burst, 99.95% availability, p95 100 ms, p99 300 ms |
 | IaC | Terraform for staging/prod (and the ZITADEL Terraform provider in all envs); Makefile + Helm locally |
@@ -59,7 +59,12 @@ managed services)"). PNG/SVG renders are next to them.
 - ZITADEL masterkey: exactly 32 chars, created before the first install, never changed.
 - `make reset` must clear both kind and compose data, otherwise ZITADEL `sub` values diverge from data keyed by `sub` in the service databases.
 - Name ZITADEL's database Service `zitadel-postgres`: a Service named `postgres` would shadow the compose
-  container for pods (compose containers resolve by name on the docker network `kind`).
+  container for pods (compose containers resolve by name on the docker network `distro`).
+- The project uses its own docker network `distro` (not kind's default `kind`) so parallel kind-based projects do not
+  share a network or hostnames like `postgres`. kind picks it up from `KIND_EXPERIMENTAL_DOCKER_NETWORK`, an
+  experimental kind variable that the Makefile exports; a manual `kind create cluster` needs it set too. Host ports
+  8080/8443 and the store ports (5432, 6379, 27017, 9094) are still shared, so projects using the same ports cannot run
+  at the same time.
 - Envoy cannot reach `auth.localtest.me` from inside the cluster (resolves to 127.0.0.1): JWKS goes through
   an Envoy Gateway `Backend` pointing at the in-cluster ZITADEL Service, while the JWKS `uri` keeps the public host.
 - Envoy tracing is off by default and defaults to 100% sampling when on: always set `samplingRate` explicitly.

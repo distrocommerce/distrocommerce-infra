@@ -7,31 +7,31 @@ Do each step, run its checks, then go on. Chart value keys are drafts: compare w
 - Docker Desktop: Settings → Resources: 8 CPUs, 16 GB RAM, 1-2 GB swap, 60 GB disk (ceilings, not reservations).
 - Needed: `docker` (+ compose v2), `kind`, `kubectl`, `helm`, `make`, `jq`, `psql` (`brew install libpq && brew link --force libpq`), `git`.
   Optional: `k9s`. Skipped on purpose: `kcat` (Kafka is checked through the container), `cloud-provider-kind`.
-- `kind get clusters` must be empty; ports 80/443 and 5432/6379/27017/9094 must be free
-  (`sudo lsof -nP -iTCP:80 -iTCP:443 -sTCP:LISTEN`). `make doctor` checks tools and 80/443; run it before the
-  cluster exists (afterwards kind holds 80/443).
+- `kind get clusters` must be empty; ports 8080/8443 and 5432/6379/27017/9094 must be free
+  (`sudo lsof -nP -iTCP:8080 -iTCP:8443 -sTCP:LISTEN`). `make doctor` checks tools and 8080/8443; run it before the
+  cluster exists (afterwards kind holds 8080/8443).
 
 ## Step 1. docker-compose stores
 Files: `compose/compose.yaml`, `compose/.env.example` (copy to `compose/.env`), `compose/postgres-init/01-databases.sh`.
 1. `docker manifest inspect` the four image tags (all confirmed on 2026-11-08).
-2. `make infra-up` (creates the docker network `kind` if missing, then `compose up -d --wait`).
+2. `make infra-up` (creates the docker network `distro` if missing, then `compose up -d --wait`).
 3. Checks:
    - `docker compose -f compose/compose.yaml --env-file compose/.env ps`: four services `healthy`.
    - `PGPASSWORD=profile_dev psql -h localhost -U profile -d profile -c "select version();"` → PostgreSQL 18.6.
    - redis: `exec redis redis-cli ping` → PONG; mongo: `exec mongo mongosh -u root -p mongo_dev --authenticationDatabase admin --eval "db.runCommand({ping:1})"`.
    - kafka: `exec kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list`.
-   - names resolve on the network: `docker run --rm --network kind busybox:1.36 nslookup postgres` (and `kafka`).
+   - names resolve on the network: `docker run --rm --network distro busybox:1.36 nslookup postgres` (and `kafka`).
 - If mongo previously ran `mongo:8.0` on the same volume: `make infra-reset` first (featureCompatibilityVersion error).
 
 ## Step 2. kind cluster
-File: `kind/kind.yaml` (single control-plane node, host 80/443 → node ports 30080/30443, bound to 127.0.0.1).
+File: `kind/kind.yaml` (single control-plane node, host 8080/8443 → node ports 30080/30443, bound to 127.0.0.1).
 1. `make cluster-up`; `kubectl get nodes` (Ready), `kubectl get pods -A`.
-2. `docker ps --filter name=distro-control-plane --format '{{.Ports}}'` shows 127.0.0.1:80->30080 and 443->30443.
-   If Docker Desktop cannot bind 80/443, use 8080/8443 (the port then becomes part of the ZITADEL issuer).
+2. `docker ps --filter name=distro-control-plane --format '{{.Ports}}'` shows 127.0.0.1:8080->30080 and 8443->30443.
+   Host ports are 8080/8443 (not 80/443), so the port is part of every local URL and of the ZITADEL issuer.
 3. Pods reach compose stores by name:
    `kubectl run nettest --rm -i --restart=Never --image=busybox:1.36 -- sh -c 'for t in postgres:5432 redis:6379 mongo:27017 kafka:9092; do h=${t%:*}; p=${t#*:}; nc -w 2 $h $p </dev/null && echo "$t open" || echo "$t FAIL"; done'`
-4. If kind does not adopt the pre-created `kind` network or names do not resolve: `make infra-down`,
-   `docker network rm kind`, `make cluster-up`, `make infra-up`.
+4. If kind does not adopt the pre-created `distro` network or names do not resolve: `make infra-down`,
+   `docker network rm distro`, `make cluster-up`, `make infra-up`.
 
 ## Step 3. Envoy Gateway (v1.9.3)
 Files: `k8s/envoy-gateway-values.yaml`, `k8s/envoy-gateway.yaml`, `k8s/dev/echo.yaml`.
@@ -39,8 +39,8 @@ Files: `k8s/envoy-gateway-values.yaml`, `k8s/envoy-gateway.yaml`, `k8s/dev/echo.
    Create namespaces `auth` and `observability` as well when you reach those steps (the make targets do it).
 2. Checks: `helm list -n envoy-gateway-system` (gateway-helm-v1.9.3); `kubectl get crd | grep -E "gateway.networking.k8s.io|gateway.envoyproxy.io"`;
    `kubectl get gatewayclass eg` (Accepted); `kubectl get gateway -n edge public` (Programmed);
-   `kubectl get svc -n envoy-gateway-system` (NodePort 80:30080). The EnvoyProxy `patch` for nodePort was not verified.
-3. Test: `kubectl apply -f k8s/dev/echo.yaml`; `curl -i http://echo.localtest.me/` → 200 "hello from envoy"; then delete it.
+   `kubectl get svc -n envoy-gateway-system` (NodePort 80:30080).
+3. Test: `kubectl apply -f k8s/dev/echo.yaml`; `curl -i http://echo.localtest.me:8080/` → 200 "hello from envoy"; then delete it.
    Debug: Gateway/HTTPRoute `status.conditions`.
 
 ## Step 4. ZITADEL
@@ -81,7 +81,7 @@ whether the Tempo chart lives in `grafana` or `grafana-community`: `helm search 
   depends on it, plus `values-local.yaml`. The release name is the service name. `auth.audiences` holds the ZITADEL
   project ID; set `auth.enabled: false` for public routes.
 - Per-service `DATABASE_URL` secret: `make db-secrets` (add one block per service; the host `postgres` resolves through
-  the docker network `kind`).
+  the docker network `distro`).
 - What the chart expects from a service: it listens on `service.port`, serves the liveness and readiness paths given in
   `probes.*`, and reads its configuration from `env` and the `envFromSecret` secret. Envoy sends the token `sub` in `X-User-ID`.
 - Build and deploy loop from a service repository: build an image tagged with the short git SHA,

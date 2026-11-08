@@ -1,5 +1,9 @@
 # DistroCommerce local environment. Draft: not yet run end to end, verify each target.
-# Order matters: infra-up creates the docker network "kind" before the cluster is created.
+# Order matters: infra-up creates the docker network "$(DOCKER_NET)" before the cluster is created.
+
+# Own docker network so other kind-based projects do not share it (or hostnames like postgres).
+DOCKER_NET := distro
+export KIND_EXPERIMENTAL_DOCKER_NETWORK := $(DOCKER_NET)
 
 COMPOSE = docker compose -f compose/compose.yaml --env-file compose/.env
 
@@ -13,13 +17,13 @@ OTEL_VERSION          ?=
 
 .PHONY: doctor up reset infra-up infra-down infra-reset cluster-up cluster-down edge-up auth-up obs-up db-secrets
 
-doctor: ## run before the cluster exists (ports 80/443 must be free)
+doctor: ## run before the cluster exists (ports 8080/8443 must be free)
 	@for t in docker kind kubectl helm make jq psql; do \
 	  command -v $$t >/dev/null || { echo "MISSING: $$t"; exit 1; }; \
 	done
 	@docker compose version >/dev/null || { echo "MISSING: docker compose v2"; exit 1; }
-	@! lsof -nP -iTCP:80 -sTCP:LISTEN >/dev/null 2>&1 || { echo "port 80 busy"; exit 1; }
-	@! lsof -nP -iTCP:443 -sTCP:LISTEN >/dev/null 2>&1 || { echo "port 443 busy"; exit 1; }
+	@! lsof -nP -iTCP:8080 -sTCP:LISTEN >/dev/null 2>&1 || { echo "port 8080 busy"; exit 1; }
+	@! lsof -nP -iTCP:8443 -sTCP:LISTEN >/dev/null 2>&1 || { echo "port 8443 busy"; exit 1; }
 	@echo "tools ok"
 
 up: infra-up cluster-up edge-up auth-up obs-up db-secrets
@@ -27,7 +31,7 @@ up: infra-up cluster-up edge-up auth-up obs-up db-secrets
 reset: cluster-down infra-reset
 
 infra-up:
-	@docker network inspect kind >/dev/null 2>&1 || docker network create kind
+	@docker network inspect $(DOCKER_NET) >/dev/null 2>&1 || docker network create $(DOCKER_NET)
 	$(COMPOSE) up -d --wait
 
 infra-down:
