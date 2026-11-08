@@ -13,7 +13,7 @@ Do each step, run its checks, then go on. Chart value keys are drafts: compare w
 
 ## Step 1. docker-compose stores
 Files: `compose/compose.yaml`, `compose/.env.example` (copy to `compose/.env`), `compose/postgres-init/01-databases.sh`.
-1. `docker manifest inspect` the four image tags (the Kafka tag `4.4.0` was not confirmed).
+1. `docker manifest inspect` the four image tags (all confirmed on 2026-11-08).
 2. `make infra-up` (creates the docker network `kind` if missing, then `compose up -d --wait`).
 3. Checks:
    - `docker compose -f compose/compose.yaml --env-file compose/.env ps`: four services `healthy`.

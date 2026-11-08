@@ -30,7 +30,7 @@ only the stateful stores. Staging/production: one EKS cluster plus AWS managed s
 ## Fixed decisions (do not reopen unless asked)
 - Local ingress uses kind `extraPortMappings` (host 80/443 to NodePort 30080/30443). No cloud-provider-kind.
 - Envoy Gateway is pinned to v1.9.3. PostgreSQL is exactly 18.6 everywhere. Local stores: Redis 8.10-alpine,
-  MongoDB 9.0, Kafka 4.4 (tag unverified). Pin every chart version; never deploy `latest`.
+  MongoDB 9.0, Kafka 4.4.0. Pin every chart version; never deploy `latest`.
 - No Cilium, NetworkPolicy, service mesh or CDN for now (accepted debt). Tempo only (no Jaeger), no Mimir, no separate
   tools cluster. Helm now, Argo CD later. Terraform for staging/production and for ZITADEL configuration.
 - ZITADEL access tokens must be JWT. The issuer must be identical in ZITADEL, the Envoy SecurityPolicy and the tokens
@@ -44,7 +44,7 @@ only the stateful stores. Staging/production: one EKS cluster plus AWS managed s
 - The configs are drafts that have never been run. Before relying on a Helm value key run `helm show values <chart>` for the
   pinned chart version; before relying on a CRD field check the docs or `kubectl explain`. Say plainly when something is
   unverified instead of guessing. Known unverified: the EnvoyProxy nodePort patch, the Backend API enable key, the Envoy
-  `telemetry.tracing` fields, the ZITADEL chart keys, the Loki filesystem values, the Tempo chart keys, the Kafka tag 4.4.0.
+  `telemetry.tracing` fields, the ZITADEL chart keys, the Loki filesystem values, the Tempo chart keys.
 - Makefile recipes need tab indentation. Start order matters: the docker network `kind` must exist before compose (see `make up`).
 - Never commit secrets (`.env` is ignored). Passwords in local manifests are development-only.
 - All repository content, comments and commit messages are in English.
