@@ -1,0 +1,12 @@
+# Lets Envoy fetch JWKS from the in-cluster ZITADEL Service while the JWKS uri keeps
+# Host auth.localtest.me (inside pods localtest.me resolves to 127.0.0.1).
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: Backend
+metadata:
+  name: zitadel-jwks
+  namespace: apps
+spec:
+  endpoints:
+    - fqdn:
+        hostname: zitadel.auth.svc.cluster.local
+        port: 8080

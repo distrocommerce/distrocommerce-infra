@@ -1,0 +1,43 @@
+# Verify key placement with `helm show values zitadel/zitadel` (replicaCount/env may be top-level).
+zitadel:
+  masterkeySecretName: zitadel-masterkey
+  configmapConfig:
+    ExternalDomain: auth.localtest.me
+    ExternalPort: 80
+    ExternalSecure: false
+    TLS:
+      Enabled: false
+    Database:
+      Postgres:
+        Host: zitadel-postgres
+        Port: 5432
+        Database: zitadel
+        User:
+          Username: zitadel
+          SSL:
+            Mode: disable
+        Admin:
+          Username: postgres
+          SSL:
+            Mode: disable
+    FirstInstance:
+      Org:
+        Name: DistroCommerce
+        Human:
+          UserName: admin
+          Password: "Password1!"   # local only
+          PasswordChangeRequired: false
+
+replicaCount: 1
+
+env:
+  - name: ZITADEL_DATABASE_POSTGRES_USER_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: zitadel-postgres
+        key: user-password
+  - name: ZITADEL_DATABASE_POSTGRES_ADMIN_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: zitadel-postgres
+        key: admin-password

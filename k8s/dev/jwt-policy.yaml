@@ -1,0 +1,25 @@
+# Step 5 test policy. Needs k8s/zitadel/jwks-backend.yaml applied.
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: SecurityPolicy
+metadata:
+  name: jwt-zitadel
+  namespace: apps
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: whoami
+  jwt:
+    providers:
+      - name: zitadel
+        issuer: http://auth.localtest.me
+        remoteJWKS:
+          uri: http://auth.localtest.me/oauth/v2/keys
+          backendRefs:
+            - group: gateway.envoyproxy.io
+              kind: Backend
+              name: zitadel-jwks
+              port: 8080
+        claimToHeaders:
+          - header: x-user-id
+            claim: sub

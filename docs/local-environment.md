@@ -1,0 +1,96 @@
+# Local environment runbook (macOS, Docker Desktop, kind)
+
+Run everything from the root of this repo. Configs live in `compose/`, `kind/`, `k8s/`, `charts/`.
+Do each step, run its checks, then go on. Chart value keys are drafts: compare with `helm show values`.
+
+## Step 0. Tools
+- Docker Desktop: Settings → Resources: 8 CPUs, 16 GB RAM, 1-2 GB swap, 60 GB disk (ceilings, not reservations).
+- Needed: `docker` (+ compose v2), `kind`, `kubectl`, `helm`, `make`, `jq`, `psql` (`brew install libpq && brew link --force libpq`), `git`.
+  Optional: `k9s`. Skipped on purpose: `kcat` (Kafka is checked through the container), `cloud-provider-kind`.
+- `kind get clusters` must be empty; ports 80/443 and 5432/6379/27017/9094 must be free
+  (`sudo lsof -nP -iTCP:80 -iTCP:443 -sTCP:LISTEN`). `make doctor` checks tools and 80/443; run it before the
+  cluster exists (afterwards kind holds 80/443).
+
+## Step 1. docker-compose stores
+Files: `compose/compose.yaml`, `compose/.env.example` (copy to `compose/.env`), `compose/postgres-init/01-databases.sh`.
+1. `docker manifest inspect` the four image tags (the Kafka tag `4.4.0` was not confirmed).
+2. `make infra-up` (creates the docker network `kind` if missing, then `compose up -d --wait`).
+3. Checks:
+   - `docker compose -f compose/compose.yaml --env-file compose/.env ps`: four services `healthy`.
+   - `PGPASSWORD=profile_dev psql -h localhost -U profile -d profile -c "select version();"` → PostgreSQL 18.6.
+   - redis: `exec redis redis-cli ping` → PONG; mongo: `exec mongo mongosh -u root -p mongo_dev --authenticationDatabase admin --eval "db.runCommand({ping:1})"`.
+   - kafka: `exec kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list`.
+   - names resolve on the network: `docker run --rm --network kind busybox:1.36 nslookup postgres` (and `kafka`).
+- If mongo previously ran `mongo:8.0` on the same volume: `make infra-reset` first (featureCompatibilityVersion error).
+
+## Step 2. kind cluster
+File: `kind/kind.yaml` (single control-plane node, host 80/443 → node ports 30080/30443, bound to 127.0.0.1).
+1. `make cluster-up`; `kubectl get nodes` (Ready), `kubectl get pods -A`.
+2. `docker ps --filter name=distro-control-plane --format '{{.Ports}}'` shows 127.0.0.1:80->30080 and 443->30443.
+   If Docker Desktop cannot bind 80/443, use 8080/8443 (the port then becomes part of the ZITADEL issuer).
+3. Pods reach compose stores by name:
+   `kubectl run nettest --rm -i --restart=Never --image=busybox:1.36 -- sh -c 'for t in postgres:5432 redis:6379 mongo:27017 kafka:9092; do h=${t%:*}; p=${t#*:}; nc -w 2 $h $p </dev/null && echo "$t open" || echo "$t FAIL"; done'`
+4. If kind does not adopt the pre-created `kind` network or names do not resolve: `make infra-down`,
+   `docker network rm kind`, `make cluster-up`, `make infra-up`.
+
+## Step 3. Envoy Gateway (v1.9.3)
+Files: `k8s/envoy-gateway-values.yaml`, `k8s/envoy-gateway.yaml`, `k8s/dev/echo.yaml`.
+1. `make edge-up` (namespaces, helm release `eg` in `envoy-gateway-system`, then GatewayClass/Gateway/EnvoyProxy).
+   Create namespaces `auth` and `observability` as well when you reach those steps (the make targets do it).
+2. Checks: `helm list -n envoy-gateway-system` (gateway-helm-v1.9.3); `kubectl get crd | grep -E "gateway.networking.k8s.io|gateway.envoyproxy.io"`;
+   `kubectl get gatewayclass eg` (Accepted); `kubectl get gateway -n edge public` (Programmed);
+   `kubectl get svc -n envoy-gateway-system` (NodePort 80:30080). The EnvoyProxy `patch` for nodePort was not verified.
+3. Test: `kubectl apply -f k8s/dev/echo.yaml`; `curl -i http://echo.localtest.me/` → 200 "hello from envoy"; then delete it.
+   Debug: Gateway/HTTPRoute `status.conditions`.
+
+## Step 4. ZITADEL
+Files: `k8s/zitadel/{postgres,values,httproute,jwks-backend}.yaml`. `make auth-up` (needs `ZITADEL_CHART_VERSION`;
+find it with `helm repo add zitadel https://charts.zitadel.com && helm search repo zitadel/zitadel --versions`).
+- The target creates the masterkey and DB-password secrets if absent (32-char masterkey, never change it), applies the
+  ZITADEL Postgres StatefulSet, installs the chart, applies the route and the JWKS Backend.
+- Before installing compare `helm show values zitadel/zitadel` with `k8s/zitadel/values.yaml`
+  (`replicaCount`/`env` placement, `Database.Postgres` keys). Check `kubectl get svc -n auth` for the real names/ports of the
+  zitadel and login Services and fix `httproute.yaml`.
+- Checks: `curl -s http://auth.localtest.me/.well-known/openid-configuration | jq .issuer` → `"http://auth.localtest.me"`;
+  console `http://auth.localtest.me/ui/console`, admin `admin@distrocommerce.auth.localtest.me` / `Password1!` (login name shown in console).
+- In the console create: project `distrocommerce`; a machine user (e.g. `local-test`) with client secret and **access token type JWT**.
+  IDs change after every `make reset` until the ZITADEL Terraform provider automates this.
+
+## Step 5. JWT on Envoy
+Files: `k8s/dev/whoami.yaml`, `k8s/dev/jwt-policy.yaml`, `k8s/zitadel/jwks-backend.yaml`; Backend API is enabled in
+`k8s/envoy-gateway-values.yaml` (restart the controller after changing it).
+- Token: `curl -s -u "$CLIENT_ID:$CLIENT_SECRET" -d grant_type=client_credentials -d scope="openid urn:zitadel:iam:org:project:id:${PROJECT_ID}:aud" http://auth.localtest.me/oauth/v2/token | jq -r .access_token`
+  (starts with `eyJ`; decode: `jq -R 'split(".")[1] | @base64d | fromjson'`).
+- Tests against `http://api.localtest.me/`: no token → 401; token → 200 with `X-User-Id` = sub; a client-supplied
+  `X-User-ID: hacker` must be overwritten (if not, the trust model is broken: stop); garbage token → 401.
+- Failures: `Jwks remote fetch is failed` → Backend not accepted / Backend API disabled; issuer mismatch → compare `iss`.
+- Remove the test resources afterwards.
+
+## Step 6. Observability (`make obs-up`)
+Files: `k8s/observability/*`. Set chart versions (`KPS_VERSION`, `TEMPO_VERSION`, `LOKI_VERSION`, `OTEL_VERSION`; check
+whether the Tempo chart lives in `grafana` or `grafana-community`: `helm search repo tempo`).
+- Order: kube-prometheus-stack (Prometheus + Grafana, release `kps`) → Tempo → Loki (grafana-community, Monolithic,
+  filesystem) → OTel Collector (contrib image) → Grafana route `http://grafana.localtest.me` (admin/admin).
+- Loki filesystem values and Tempo keys are unverified drafts. Loki OTLP ingest path `/otlp` is from memory.
+- Test the pipeline: `telemetrygen` traces to `otel-collector.observability.svc.cluster.local:4317`, then Grafana → Explore → Tempo.
+- Then enable the `telemetry.tracing` block in `k8s/envoy-gateway.yaml` (explicit `samplingRate`; a ReferenceGrant may be needed).
+- Container stdout log shipping is not set up (decide later: Alloy or a filelog DaemonSet).
+
+## Step 7. Deploying a service with the library chart
+- Library chart: `charts/service-lib/` (see its README). A service repository has a thin chart (`deploy/chart`) that
+  depends on it, plus `values-local.yaml`. The release name is the service name. `auth.audiences` holds the ZITADEL
+  project ID; set `auth.enabled: false` for public routes.
+- Per-service `DATABASE_URL` secret: `make db-secrets` (add one block per service; the host `postgres` resolves through
+  the docker network `kind`).
+- What the chart expects from a service: it listens on `service.port`, serves the liveness and readiness paths given in
+  `probes.*`, and reads its configuration from `env` and the `envFromSecret` secret. Envoy sends the token `sub` in `X-User-ID`.
+- Build and deploy loop from a service repository: build an image tagged with the short git SHA,
+  `kind load docker-image <image> --name distro`, then
+  `helm upgrade --install <service> deploy/chart -n apps -f deploy/chart/values-local.yaml --set image.tag=<tag>`.
+- Checks: `kubectl get pods,httproute,securitypolicy -n apps`; 401 without a token and 200 with a valid one;
+  the service's trace is visible in Tempo.
+
+## Step 8. Automation
+`make up` / `make reset` are drafted in the Makefile (not yet exercised). Optional Tilt (one Tiltfile driving sibling
+service repos, web UI) or Skaffold (declarative, per project): they automate build → `kind load` → helm upgrade on file save.
+k9s is a handy cluster viewer; `kubectl` skills remain the base.

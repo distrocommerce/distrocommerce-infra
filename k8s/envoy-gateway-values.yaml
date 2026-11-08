@@ -1,0 +1,6 @@
+# Enables the Backend API (needed for JWKS fetch via an in-cluster Service).
+# Key path recalled from memory; verify with `helm show values` / controller logs.
+config:
+  envoyGateway:
+    extensionApis:
+      enableBackend: true
