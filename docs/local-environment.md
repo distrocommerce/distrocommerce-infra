@@ -64,8 +64,18 @@ Files: `k8s/dev/whoami.yaml`, `k8s/dev/jwt-policy.yaml`, `k8s/zitadel/jwks-backe
   (starts with `eyJ`; decode: `jq -R 'split(".")[1] | @base64d | fromjson'`).
 - Tests against `http://api.localtest.me:8080/`: no token → 401; token → 200 with `X-User-Id` = sub; a client-supplied
   `X-User-ID: hacker` must be overwritten (if not, the trust model is broken: stop); garbage token → 401.
+- Tampered signature: change a character in the middle of the signature, not the last one (the last base64url
+  character of an RS256 signature carries padding bits, so changing it may leave the signature valid):
+  `H=${TOKEN%.*}; S=${TOKEN##*.}; c=${S:100:1}; [ "$c" = A ] && r=B || r=A; BAD="$H.${S:0:100}$r${S:101}"` → 401
+  "Jwt verification fails".
+- Audience: `kubectl -n apps patch securitypolicy jwt-zitadel --type=json -p '[{"op":"add","path":"/spec/jwt/providers/0/audiences","value":["<project id>"]}]'`
+  → token still 200; with a wrong ID → **403** "Audiences in Jwt are not allowed" (Envoy answers 403, not 401).
+- Counters: port-forward the Envoy pod's admin port 19000 and read `/stats` (`jwt_authn.allowed|denied|jwks_fetch_*`).
 - Failures: `Jwks remote fetch is failed` → Backend not accepted / Backend API disabled; issuer mismatch → compare `iss`.
-- Remove the test resources afterwards.
+  One `jwks_fetch_failed` with "cluster ... is not configured" right after applying the policy is a startup race; it
+  refetches on its own.
+- `Jwt is missing` → no `Authorization` header was sent (for example `$TOKEN` is empty in a new shell).
+- Remove the test resources afterwards (keep the `zitadel-jwks` Backend: `make auth-up` manages it).
 
 ## Step 6. Observability (`make obs-up`)
 Files: `k8s/observability/*`. Set chart versions (`KPS_VERSION`, `TEMPO_VERSION`, `LOKI_VERSION`, `OTEL_VERSION`; check

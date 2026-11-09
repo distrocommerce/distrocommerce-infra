@@ -10,7 +10,7 @@ run end to end**; configs for steps 1-7 are drafts to verify (chart value keys e
 | 2 | kind cluster with extraPortMappings | done (2026-11-08) |
 | 3 | Envoy Gateway v1.9.3 + Gateway | done (2026-11-08) |
 | 4 | ZITADEL + its PostgreSQL | done (2026-11-09) |
-| 5 | JWT SecurityPolicy | not verified |
+| 5 | JWT SecurityPolicy | done (2026-11-09) |
 | 6 | Observability stack | not verified |
 | 7 | Library chart and first service deployment | not verified |
 | 8 | Automation (`make up/reset`, Tilt or Skaffold) | Makefile drafted, Tilt/Skaffold not started |
@@ -66,3 +66,15 @@ run end to end**; configs for steps 1-7 are drafts to verify (chart value keys e
 - Client-credentials token with scope `urn:zitadel:iam:org:project:id:<project id>:aud`: JWT (`eyJ…`),
   `iss` = `http://auth.localtest.me:8080`, `aud` contains the project ID, `sub` = service account ID.
   Project and service account IDs change after `make reset`.
+
+## Step 5 notes (2026-11-09)
+- SecurityPolicy fields (`issuer`, `audiences`, `remoteJWKS.uri/backendRefs`, `claimToHeaders`) checked with
+  `kubectl explain` on the v1.9.3 CRD. Policy Accepted; Backend `apps/zitadel-jwks` reports Accepted once referenced.
+- JWKS fetched through the Backend (cluster host `zitadel.auth.svc.cluster.local`). One fetch failed right after the
+  policy was applied ("cluster ... is not configured", startup race); later fetches succeeded.
+- Results: no token → 401; garbage token → 401; tampered signature → 401 "Jwt verification fails"; valid token → 200
+  with `X-User-Id` = service account `sub`; client-supplied `X-User-ID: hacker` overwritten with the real `sub`.
+- Audiences (set on the live policy, not committed): correct project ID → 200; wrong ID → 403
+  "Audiences in Jwt are not allowed". The test policy in `k8s/dev/jwt-policy.yaml` sets no audiences (the project ID
+  changes after `make reset`); the library chart's `auth.audiences` is what services use.
+- Test resources (whoami, jwt-zitadel) deleted afterwards.
