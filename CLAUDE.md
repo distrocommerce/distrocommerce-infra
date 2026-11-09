@@ -34,7 +34,7 @@ only the stateful stores. Staging/production: one EKS cluster plus AWS managed s
 - No Cilium, NetworkPolicy, service mesh or CDN for now (accepted debt). Tempo only (no Jaeger), no Mimir, no separate
   tools cluster. Helm now, Argo CD later. Terraform for staging/production and for ZITADEL configuration.
 - ZITADEL access tokens must be JWT. The issuer must be identical in ZITADEL, the Envoy SecurityPolicy and the tokens
-  (`http://auth.localtest.me` locally).
+  (`http://auth.localtest.me:8080` locally).
 - Diagrams: English only, no version numbers, Mermaid sources in `docs/diagrams/`.
 - Developer machine: macOS with Docker Desktop. `kcat` is intentionally not used.
 - Helm 4 is the baseline (v4.x). Use `--rollback-on-failure` instead of `--atomic` and `--force-replace` instead of `--force`.
@@ -43,7 +43,7 @@ only the stateful stores. Staging/production: one EKS cluster plus AWS managed s
 - Follow the runbook one step at a time and run a step's checks before starting the next.
 - The configs are drafts that have never been run. Before relying on a Helm value key run `helm show values <chart>` for the
   pinned chart version; before relying on a CRD field check the docs or `kubectl explain`. Say plainly when something is
-  unverified instead of guessing. Known unverified: the Envoy `telemetry.tracing` fields, the ZITADEL chart keys, the Loki filesystem values, the Tempo chart keys.
+  unverified instead of guessing. Known unverified: the Envoy `telemetry.tracing` fields, the Loki filesystem values, the Tempo chart keys.
 - Makefile recipes need tab indentation. Start order matters: the docker network `distro` (`DOCKER_NET` in the Makefile, passed to kind via `KIND_EXPERIMENTAL_DOCKER_NETWORK`) must exist before compose (see `make up`).
 - Never commit secrets (`.env` is ignored). Passwords in local manifests are development-only.
 - All repository content, comments and commit messages are in English.

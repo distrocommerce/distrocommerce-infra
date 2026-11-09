@@ -1,9 +1,10 @@
-# Verify key placement with `helm show values zitadel/zitadel` (replicaCount/env may be top-level).
+# Key placement checked against `helm show values zitadel/zitadel --version 10.5.0`.
 zitadel:
   masterkeySecretName: zitadel-masterkey
   configmapConfig:
     ExternalDomain: auth.localtest.me
-    ExternalPort: 80
+    # kind maps host 8080 to the Envoy NodePort, so the issuer is http://auth.localtest.me:8080
+    ExternalPort: 8080
     ExternalSecure: false
     TLS:
       Enabled: false

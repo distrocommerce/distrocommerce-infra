@@ -44,24 +44,25 @@ Files: `k8s/envoy-gateway-values.yaml`, `k8s/envoy-gateway.yaml`, `k8s/dev/echo.
    Debug: Gateway/HTTPRoute `status.conditions`.
 
 ## Step 4. ZITADEL
-Files: `k8s/zitadel/{postgres,values,httproute,jwks-backend}.yaml`. `make auth-up` (needs `ZITADEL_CHART_VERSION`;
-find it with `helm repo add zitadel https://charts.zitadel.com && helm search repo zitadel/zitadel --versions`).
+Files: `k8s/zitadel/{postgres,values,httproute,jwks-backend}.yaml`. `make auth-up` (chart pinned by `ZITADEL_CHART_VERSION`, 10.5.0;
+newer ones: `helm repo add zitadel https://charts.zitadel.com && helm search repo zitadel/zitadel --versions`).
 - The target creates the masterkey and DB-password secrets if absent (32-char masterkey, never change it), applies the
   ZITADEL Postgres StatefulSet, installs the chart, applies the route and the JWKS Backend.
-- Before installing compare `helm show values zitadel/zitadel` with `k8s/zitadel/values.yaml`
-  (`replicaCount`/`env` placement, `Database.Postgres` keys). Check `kubectl get svc -n auth` for the real names/ports of the
-  zitadel and login Services and fix `httproute.yaml`.
-- Checks: `curl -s http://auth.localtest.me/.well-known/openid-configuration | jq .issuer` → `"http://auth.localtest.me"`;
-  console `http://auth.localtest.me/ui/console`, admin `admin@distrocommerce.auth.localtest.me` / `Password1!` (login name shown in console).
-- In the console create: project `distrocommerce`; a machine user (e.g. `local-test`) with client secret and **access token type JWT**.
+- Values and Service names (`zitadel:8080` h2c, `zitadel-login:3000`) are checked against chart 10.5.0. After a chart
+  bump, compare `helm show values` with `k8s/zitadel/values.yaml` and `kubectl get svc -n auth` with `httproute.yaml`.
+- Pods: `zitadel`, `zitadel-login`, `zitadel-postgres-0` Running; jobs `zitadel-init`, `zitadel-setup` Complete.
+- Checks: `curl -s http://auth.localtest.me:8080/.well-known/openid-configuration | jq .issuer` → `"http://auth.localtest.me:8080"`;
+  console `http://auth.localtest.me:8080/ui/console`, admin `admin@distrocommerce.auth.localtest.me` / `Password1!` (login name shown in console).
+- In the console create: project `distrocommerce`; a service account (Users → Service Accounts, e.g. `local-test`) with
+  **access token type JWT**, then Actions → Generate Client Secret. The client ID is the user name.
   IDs change after every `make reset` until the ZITADEL Terraform provider automates this.
 
 ## Step 5. JWT on Envoy
 Files: `k8s/dev/whoami.yaml`, `k8s/dev/jwt-policy.yaml`, `k8s/zitadel/jwks-backend.yaml`; Backend API is enabled in
 `k8s/envoy-gateway-values.yaml` (restart the controller after changing it).
-- Token: `curl -s -u "$CLIENT_ID:$CLIENT_SECRET" -d grant_type=client_credentials -d scope="openid urn:zitadel:iam:org:project:id:${PROJECT_ID}:aud" http://auth.localtest.me/oauth/v2/token | jq -r .access_token`
+- Token: `curl -s -u "$CLIENT_ID:$CLIENT_SECRET" -d grant_type=client_credentials -d scope="openid urn:zitadel:iam:org:project:id:${PROJECT_ID}:aud" http://auth.localtest.me:8080/oauth/v2/token | jq -r .access_token`
   (starts with `eyJ`; decode: `jq -R 'split(".")[1] | @base64d | fromjson'`).
-- Tests against `http://api.localtest.me/`: no token → 401; token → 200 with `X-User-Id` = sub; a client-supplied
+- Tests against `http://api.localtest.me:8080/`: no token → 401; token → 200 with `X-User-Id` = sub; a client-supplied
   `X-User-ID: hacker` must be overwritten (if not, the trust model is broken: stop); garbage token → 401.
 - Failures: `Jwks remote fetch is failed` → Backend not accepted / Backend API disabled; issuer mismatch → compare `iss`.
 - Remove the test resources afterwards.
@@ -70,7 +71,7 @@ Files: `k8s/dev/whoami.yaml`, `k8s/dev/jwt-policy.yaml`, `k8s/zitadel/jwks-backe
 Files: `k8s/observability/*`. Set chart versions (`KPS_VERSION`, `TEMPO_VERSION`, `LOKI_VERSION`, `OTEL_VERSION`; check
 whether the Tempo chart lives in `grafana` or `grafana-community`: `helm search repo tempo`).
 - Order: kube-prometheus-stack (Prometheus + Grafana, release `kps`) → Tempo → Loki (grafana-community, Monolithic,
-  filesystem) → OTel Collector (contrib image) → Grafana route `http://grafana.localtest.me` (admin/admin).
+  filesystem) → OTel Collector (contrib image) → Grafana route `http://grafana.localtest.me:8080` (admin/admin).
 - Loki filesystem values and Tempo keys are unverified drafts. Loki OTLP ingest path `/otlp` is from memory.
 - Test the pipeline: `telemetrygen` traces to `otel-collector.observability.svc.cluster.local:4317`, then Grafana → Explore → Tempo.
 - Then enable the `telemetry.tracing` block in `k8s/envoy-gateway.yaml` (explicit `samplingRate`; a ReferenceGrant may be needed).

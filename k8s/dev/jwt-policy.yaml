@@ -12,9 +12,9 @@ spec:
   jwt:
     providers:
       - name: zitadel
-        issuer: http://auth.localtest.me
+        issuer: http://auth.localtest.me:8080
         remoteJWKS:
-          uri: http://auth.localtest.me/oauth/v2/keys
+          uri: http://auth.localtest.me:8080/oauth/v2/keys
           backendRefs:
             - group: gateway.envoyproxy.io
               kind: Backend

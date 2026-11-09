@@ -8,7 +8,7 @@ export KIND_EXPERIMENTAL_DOCKER_NETWORK := $(DOCKER_NET)
 COMPOSE = docker compose -f compose/compose.yaml --env-file compose/.env
 
 EG_VERSION            ?= v1.9.3
-ZITADEL_CHART_VERSION ?=
+ZITADEL_CHART_VERSION ?= 10.5.0
 KPS_VERSION           ?=
 TEMPO_CHART           ?= grafana/tempo
 TEMPO_VERSION         ?=

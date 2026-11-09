@@ -1,4 +1,4 @@
-# Service names/ports depend on the chart version: check `kubectl get svc -n auth`.
+# Service names/ports verified for chart 10.5.0; recheck `kubectl get svc -n auth` after a chart bump.
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:

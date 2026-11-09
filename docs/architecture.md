@@ -20,7 +20,7 @@ in `charts/service-lib/`. Services use gRPC between themselves; REST is served b
 |---|---|
 | Edge | Envoy Gateway (Gateway API), always deployed in the cluster in every environment |
 | Identity | ZITADEL (OIDC); access tokens must be JWT (not opaque) so Envoy validates via JWKS |
-| Issuer | identical in ZITADEL, Envoy SecurityPolicy and tokens (locally `http://auth.localtest.me`) |
+| Issuer | identical in ZITADEL, Envoy SecurityPolicy and tokens (locally `http://auth.localtest.me:8080`) |
 | Deploy | Helm (library chart `charts/service-lib`); Argo CD later |
 | Messaging | Kafka KRaft (no Zookeeper) |
 | Mesh / CDN | none for now |
