@@ -9,11 +9,11 @@ COMPOSE = docker compose -f compose/compose.yaml --env-file compose/.env
 
 EG_VERSION            ?= v1.9.3
 ZITADEL_CHART_VERSION ?= 10.5.0
-KPS_VERSION           ?=
-TEMPO_CHART           ?= grafana/tempo
-TEMPO_VERSION         ?=
-LOKI_VERSION          ?=
-OTEL_VERSION          ?=
+# Observability charts come from OCI registries on ghcr.io (GitHub Pages repo indexes are large and can be slow).
+KPS_VERSION           ?= 93.1.1
+TEMPO_VERSION         ?= 3.2.1
+LOKI_VERSION          ?= 21.1.1
+OTEL_VERSION          ?= 0.178.2
 
 .PHONY: doctor up reset infra-up infra-down infra-reset cluster-up cluster-down edge-up auth-up obs-up db-secrets
 
@@ -74,21 +74,18 @@ auth-up:
 	kubectl apply -f k8s/zitadel/jwks-backend.yaml
 
 obs-up:
-	@test -n "$(KPS_VERSION)$(TEMPO_VERSION)$(LOKI_VERSION)$(OTEL_VERSION)" || { echo "set chart versions"; exit 1; }
+	@for v in "$(KPS_VERSION)" "$(TEMPO_VERSION)" "$(LOKI_VERSION)" "$(OTEL_VERSION)"; do \
+	  test -n "$$v" || { echo "set KPS_VERSION, TEMPO_VERSION, LOKI_VERSION and OTEL_VERSION"; exit 1; }; \
+	done
 	kubectl create namespace observability --dry-run=client -o yaml | kubectl apply -f -
-	helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-	helm repo add grafana https://grafana.github.io/helm-charts
-	helm repo add grafana-community https://grafana-community.github.io/helm-charts
-	helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
-	helm repo update
-	helm upgrade --install kps prometheus-community/kube-prometheus-stack --version $(KPS_VERSION) \
-	  -n observability -f k8s/observability/kps-values.yaml --wait --timeout 10m
-	helm upgrade --install tempo $(TEMPO_CHART) --version $(TEMPO_VERSION) \
-	  -n observability -f k8s/observability/tempo-values.yaml --wait
-	helm upgrade --install loki grafana-community/loki --version $(LOKI_VERSION) \
-	  -n observability -f k8s/observability/loki-values.yaml --wait --timeout 10m
-	helm upgrade --install otel-collector open-telemetry/opentelemetry-collector --version $(OTEL_VERSION) \
-	  -n observability -f k8s/observability/otel-values.yaml --wait
+	helm upgrade --install kps oci://ghcr.io/prometheus-community/charts/kube-prometheus-stack \
+	  --version $(KPS_VERSION) -n observability -f k8s/observability/kps-values.yaml --wait --timeout 10m
+	helm upgrade --install tempo oci://ghcr.io/grafana-community/helm-charts/tempo \
+	  --version $(TEMPO_VERSION) -n observability -f k8s/observability/tempo-values.yaml --wait
+	helm upgrade --install loki oci://ghcr.io/grafana-community/helm-charts/loki \
+	  --version $(LOKI_VERSION) -n observability -f k8s/observability/loki-values.yaml --wait --timeout 10m
+	helm upgrade --install otel-collector oci://ghcr.io/open-telemetry/opentelemetry-helm-charts/opentelemetry-collector \
+	  --version $(OTEL_VERSION) -n observability -f k8s/observability/otel-values.yaml --wait
 	kubectl apply -f k8s/observability/grafana-route.yaml
 
 # Per-service DB secrets (add a block per service).

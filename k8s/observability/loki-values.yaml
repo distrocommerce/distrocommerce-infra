@@ -1,5 +1,5 @@
 # Chart: grafana-community/loki, Monolithic mode, filesystem storage.
-# Filesystem values reconstructed from memory (docs show only MinIO/S3/Azure): verify with `helm show values`.
+# Checked against chart 21.1.1 (Loki 3.7.9) with `helm template`: filesystem chunks/rules under /var/loki, tsdb v13.
 deploymentMode: Monolithic
 loki:
   auth_enabled: false

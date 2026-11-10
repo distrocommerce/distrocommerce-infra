@@ -17,11 +17,12 @@ config:
       limit_percentage: 80
       spike_limit_percentage: 25
     batch: {}
+  # Collector 0.163 exporter type names: otlp_grpc and otlp_http (the chart renames the old otlp/otlphttp).
   exporters:
-    otlp/tempo:
+    otlp_grpc/tempo:
       endpoint: tempo.observability.svc.cluster.local:4317
       tls: {insecure: true}
-    otlphttp/loki:
+    otlp_http/loki:
       endpoint: http://loki.observability.svc.cluster.local:3100/otlp
     prometheusremotewrite:
       endpoint: http://kps-prometheus.observability.svc.cluster.local:9090/api/v1/write
@@ -30,7 +31,7 @@ config:
       traces:
         receivers: [otlp]
         processors: [memory_limiter, batch]
-        exporters: [otlp/tempo]
+        exporters: [otlp_grpc/tempo]
       metrics:
         receivers: [otlp]
         processors: [memory_limiter, batch]
@@ -38,4 +39,4 @@ config:
       logs:
         receivers: [otlp]
         processors: [memory_limiter, batch]
-        exporters: [otlphttp/loki]
+        exporters: [otlp_http/loki]

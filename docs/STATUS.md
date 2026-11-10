@@ -11,7 +11,7 @@ run end to end**; configs for steps 1-7 are drafts to verify (chart value keys e
 | 3 | Envoy Gateway v1.9.3 + Gateway | done (2026-11-08) |
 | 4 | ZITADEL + its PostgreSQL | done (2026-11-09) |
 | 5 | JWT SecurityPolicy | done (2026-11-09) |
-| 6 | Observability stack | not verified |
+| 6 | Observability stack | done (2026-11-10) |
 | 7 | Library chart and first service deployment | not verified |
 | 8 | Automation (`make up/reset`, Tilt or Skaffold) | Makefile drafted, Tilt/Skaffold not started |
 
@@ -78,3 +78,21 @@ run end to end**; configs for steps 1-7 are drafts to verify (chart value keys e
   "Audiences in Jwt are not allowed". The test policy in `k8s/dev/jwt-policy.yaml` sets no audiences (the project ID
   changes after `make reset`); the library chart's `auth.audiences` is what services use.
 - Test resources (whoami, jwt-zitadel) deleted afterwards.
+
+## Step 6 notes (2026-11-10)
+- GitHub Pages chart indexes downloaded at ~10 KB/s, so `helm repo add/update` never finished. All four charts now
+  come from OCI on ghcr.io, pinned: kube-prometheus-stack 93.1.1, Tempo 3.2.1 (grafana-community; `grafana/tempo` is
+  frozen at 1.24.4), Loki 21.1.1, OpenTelemetry Collector 0.178.2. The `obs-up` guard now requires every version.
+- Values checked with `helm show values` and `helm template`: Loki filesystem/tsdb v13 config correct; Tempo keys
+  unchanged in 3.2.1 (its default Jaeger receivers must stay: nulling them breaks the chart's Service template);
+  collector 0.163 renamed exporters to `otlp_grpc`/`otlp_http` (values updated).
+- First install failed: Prometheus Operator v0.95.1 (kps default) has amd64-only images. Pinned operator and
+  config-reloader to v0.95.2. All other images in the stack have arm64 builds.
+- Running: Prometheus v3.16.0, Grafana 13.3.0, Tempo 3.1.1, Loki 3.7.9, collector 0.163.2. Grafana at
+  `http://grafana.localtest.me:8080`; Prometheus, Tempo and Loki data sources healthy. Removed the Alertmanager data
+  source kps adds by default (`grafana.sidecar.datasources.alertmanager.enabled: false`).
+- Pipeline: telemetrygen (service `step6-check`) → collector → 14 traces in Tempo, 27 log lines in Loki (OTLP `/otlp`),
+  metric `gen` in Prometheus (remote write), all queried through Grafana.
+- Envoy tracing enabled (`samplingRate: 100`, OpenTelemetry to `observability/otel-collector:4317`, no ReferenceGrant
+  needed); requests through Envoy appear in Tempo as `public.edge` / `ingress`.
+- Not set up: container stdout log shipping (Alloy or a filelog DaemonSet, decide later).

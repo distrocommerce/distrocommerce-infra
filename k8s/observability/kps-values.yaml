@@ -7,6 +7,14 @@ kubeEtcd: {enabled: false}
 kubeScheduler: {enabled: false}
 kubeControllerManager: {enabled: false}
 kubeProxy: {enabled: false}
+# Chart 93.1.1 ships operator v0.95.1, which has no linux/arm64 images (operator and config-reloader).
+# v0.95.2 has them. Drop these tags once a chart release uses v0.95.2 or later.
+prometheusOperator:
+  image:
+    tag: v0.95.2
+  prometheusConfigReloader:
+    image:
+      tag: v0.95.2
 prometheus:
   prometheusSpec:
     retention: 3d
@@ -22,6 +30,10 @@ prometheus:
               storage: 5Gi
 grafana:
   adminPassword: admin   # local only
+  sidecar:
+    datasources:
+      alertmanager:
+        enabled: false   # Alertmanager is disabled above
   additionalDataSources:
     - name: Tempo
       type: tempo

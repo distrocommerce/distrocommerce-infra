@@ -78,13 +78,21 @@ Files: `k8s/dev/whoami.yaml`, `k8s/dev/jwt-policy.yaml`, `k8s/zitadel/jwks-backe
 - Remove the test resources afterwards (keep the `zitadel-jwks` Backend: `make auth-up` manages it).
 
 ## Step 6. Observability (`make obs-up`)
-Files: `k8s/observability/*`. Set chart versions (`KPS_VERSION`, `TEMPO_VERSION`, `LOKI_VERSION`, `OTEL_VERSION`; check
-whether the Tempo chart lives in `grafana` or `grafana-community`: `helm search repo tempo`).
-- Order: kube-prometheus-stack (Prometheus + Grafana, release `kps`) → Tempo → Loki (grafana-community, Monolithic,
-  filesystem) → OTel Collector (contrib image) → Grafana route `http://grafana.localtest.me:8080` (admin/admin).
-- Loki filesystem values and Tempo keys are unverified drafts. Loki OTLP ingest path `/otlp` is from memory.
-- Test the pipeline: `telemetrygen` traces to `otel-collector.observability.svc.cluster.local:4317`, then Grafana → Explore → Tempo.
-- Then enable the `telemetry.tracing` block in `k8s/envoy-gateway.yaml` (explicit `samplingRate`; a ReferenceGrant may be needed).
+Files: `k8s/observability/*`. Charts are pulled as OCI from ghcr.io and pinned in the `Makefile` (`KPS_VERSION` 93.1.1,
+`TEMPO_VERSION` 3.2.1 from grafana-community, `LOKI_VERSION` 21.1.1, `OTEL_VERSION` 0.178.2); no `helm repo add` needed.
+- Order: kube-prometheus-stack (Prometheus + Grafana, release `kps`) → Tempo → Loki (Monolithic, filesystem) →
+  OTel Collector (contrib image) → Grafana route `http://grafana.localtest.me:8080` (admin/admin).
+- kps 93.1.1 ships Prometheus Operator v0.95.1, which has no arm64 images: `kps-values.yaml` pins operator and
+  config-reloader to v0.95.2. Symptom without it: `kps-operator` in ImagePullBackOff ("no match for platform in manifest").
+- Checks: `helm list -n observability` (4 releases deployed); all pods Running; in Grafana the Prometheus, Tempo and Loki
+  data sources pass "Save & test" (or `GET /api/datasources/uid/<uid>/health`).
+- Test the pipeline: send each signal with telemetrygen (arm64 build: `v0.163.0`):
+  `kubectl run tg-traces -n observability --rm -i --restart=Never --image=ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen:v0.163.0 -- traces --otlp-endpoint=otel-collector.observability.svc.cluster.local:4317 --otlp-insecure --duration=5s --rate=5 --service=step6-check`
+  (repeat with `metrics` and `logs`). Then Grafana → Explore: Tempo `service.name=step6-check`, Loki
+  `{service_name="step6-check"}`, Prometheus `gen{job="step6-check"}`.
+- Envoy tracing: `telemetry.tracing` in `k8s/envoy-gateway.yaml` (explicit `samplingRate`; no ReferenceGrant needed for
+  the cross-namespace collector). Requests through Envoy show up in Tempo as service `public.edge`, root span `ingress`.
+- Grafana keeps data sources in its database (emptyDir): after removing one from the values, restart `kps-grafana`.
 - Container stdout log shipping is not set up (decide later: Alloy or a filelog DaemonSet).
 
 ## Step 7. Deploying a service with the library chart

@@ -1,4 +1,5 @@
-# Based on a third-party article (chart 1.24.4); verify keys with `helm show values`.
+# Chart grafana-community/tempo 3.2.1 (Tempo 3.1.1); keys checked with `helm show values` and `helm template`.
+# The chart's default Jaeger receivers stay on: setting tempo.receivers.jaeger to null breaks its Service template.
 tempo:
   storage:
     trace:

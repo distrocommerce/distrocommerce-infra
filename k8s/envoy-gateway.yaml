@@ -16,17 +16,17 @@ spec:
               ports:
                 - port: 80
                   nodePort: 30080
-  # Enable after the observability stack (step 6). Sampling must be explicit:
-  # the Envoy Gateway default is 100%. Verify field names in the Envoy Gateway docs.
-  # telemetry:
-  #   tracing:
-  #     samplingRate: 100
-  #     provider:
-  #       type: OpenTelemetry
-  #       backendRefs:
-  #         - name: otel-collector
-  #           namespace: observability
-  #           port: 4317
+  # Needs the observability stack (step 6). Sampling must be explicit: the Envoy Gateway
+  # default is 100%. Fields checked with `kubectl explain` on the v1.9.3 CRD.
+  telemetry:
+    tracing:
+      samplingRate: 100   # local only; lower it in staging/production
+      provider:
+        type: OpenTelemetry
+        backendRefs:
+          - name: otel-collector
+            namespace: observability
+            port: 4317
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: GatewayClass
