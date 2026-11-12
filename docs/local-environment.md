@@ -112,8 +112,14 @@ Files: `k8s/observability/*`. Charts are pulled as OCI from ghcr.io and pinned i
 - Build and deploy loop from a service repository: build an image tagged with the short git SHA,
   `kind load docker-image <image> --name distro`, then
   `helm upgrade --install <service> deploy/chart -n apps -f deploy/chart/values-local.yaml --set image.tag=<tag>`.
-- Checks: `kubectl get pods,httproute,securitypolicy -n apps`; 401 without a token and 200 with a valid one;
-  the service's trace is visible in Tempo.
+  The first service, `profile-service` (sibling checkout), wraps this as
+  `make db-secrets` (here), then `make image kind-load deploy PROJECT_ID=<project id>` (there).
+- Checks: `kubectl get pods,httproute,securitypolicy -n apps` (route and policy Accepted); no token → 401 from Envoy;
+  for profile: token → 404 problem+json `profile_not_found` from the service until a row exists, 200 with the profile
+  afterwards (`INSERT INTO profiles (user_id, ...) VALUES ('<sub>', ...)` in the `profile` database).
+- Traces: Grafana → Explore → Tempo → TraceQL `{resource.service.name="profile"}` (a search needs a time range).
+  One trace holds Envoy's `ingress` and router spans, the service's `GET /v1/users/me` span and its SQL spans.
+  The service's log lines carry the same `trace_id`.
 
 ## Step 8. Automation
 `make up` / `make reset` are drafted in the Makefile (not yet exercised). Optional Tilt (one Tiltfile driving sibling

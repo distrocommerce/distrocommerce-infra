@@ -43,8 +43,8 @@ only the stateful stores. Staging/production: one EKS cluster plus AWS managed s
 - Follow the runbook one step at a time and run a step's checks before starting the next.
 - The configs are drafts that have never been run. Before relying on a Helm value key run `helm show values <chart>` for the
   pinned chart version; before relying on a CRD field check the docs or `kubectl explain`. Say plainly when something is
-  unverified instead of guessing. Steps 1-6 were run and verified (see `docs/STATUS.md`); step 7: the library chart is verified with
-  a stand-in (`k8s/dev/lib-test`), a real service deployment is not.
+  unverified instead of guessing. Steps 1-7 were run and verified (see `docs/STATUS.md`): the library chart with a
+  stand-in (`k8s/dev/lib-test`) and with the first real service, `profile-service`. Step 8 (`make up`/`reset`) is not.
 - Images must have linux/arm64 builds (Apple silicon): check with `docker manifest inspect` before pinning a new tag.
 - Makefile recipes need tab indentation. Start order matters: the docker network `distro` (`DOCKER_NET` in the Makefile, passed to kind via `KIND_EXPERIMENTAL_DOCKER_NETWORK`) must exist before compose (see `make up`).
 - Never commit secrets (`.env` is ignored). Passwords in local manifests are development-only.

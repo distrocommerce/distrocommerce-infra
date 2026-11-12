@@ -12,7 +12,7 @@ run end to end**; configs for steps 1-7 are drafts to verify (chart value keys e
 | 4 | ZITADEL + its PostgreSQL | done (2026-11-09) |
 | 5 | JWT SecurityPolicy | done (2026-11-09) |
 | 6 | Observability stack | done (2026-11-10) |
-| 7 | Library chart and first service deployment | library chart done (2026-11-11); first real service pending |
+| 7 | Library chart and first service deployment | done (2026-11-12) |
 | 8 | Automation (`make up/reset`, Tilt or Skaffold) | Makefile drafted, Tilt/Skaffold not started |
 
 ## Step 1 notes (2026-11-08)
@@ -109,5 +109,20 @@ run end to end**; configs for steps 1-7 are drafts to verify (chart value keys e
 - Stand-in deployed with `k8s/dev/lib-test` (traefik/whoami, release `libtest`): pod Running with probes on `/health`,
   HTTPRoute and SecurityPolicy Accepted, OTel env present. No token → 401, garbage token → 401, valid token → 200 with
   `X-User-Id` = sub, forged `X-User-ID` overwritten, wrong audience (via helm upgrade) → 403. Uninstalled afterwards.
-- Pending: a real service skeleton (own repository, language not chosen yet) deployed through its `deploy/chart`,
-  with its traces and metrics in Tempo and Prometheus.
+- Part 2 below: the real service.
+
+## Step 7 notes, part 2: first service (2026-11-12)
+- `profile-service` (separate repository, Go 1.27.3): skeleton reviewed and fixed (image tag gets a `-dirty-<hash>`
+  suffix for uncommitted trees, `/readyz` DB ping 800 ms below the 1 s probe timeout, values split). Unit tests,
+  golangci-lint and the store test against the compose PostgreSQL pass.
+- `make db-secrets` created `apps/profile-db`. Image `profile:<sha>` builds for arm64, runs as 65532:65532, ~35 MB.
+- `make image kind-load deploy`: release `profile` in `apps`, pod Running, HTTPRoute and SecurityPolicy Accepted
+  (audience rendered as a string). Migration `0001_create_profiles` applied.
+- Through Envoy on `api.localtest.me:8080/v1/users/me`: no token → 401; valid token → 404 problem+json
+  `profile_not_found`; after inserting a profile row for the service account `sub` → 200 with the profile.
+  Paths outside `/v1/users` on the same host → 404 from Envoy.
+- Tracing: one trace from Envoy (`ingress`, router) through `GET /v1/users/me` to pgx (`pool.acquire`, SELECT);
+  the service logs the same `trace_id`. Tempo search needs a time range; use TraceQL in Grafana.
+- Metrics: `job="profile"` in Prometheus via the collector: `http_server_request_duration_seconds` (with `http_route`,
+  `http_response_status_code`), request/response body sizes, `db_client_operation_duration_seconds`, `pgxpool_*`.
+  The request counts matched the test requests (one 404, one 200).
