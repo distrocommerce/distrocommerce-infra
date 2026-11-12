@@ -1,0 +1,7 @@
+{{ include "service-lib.deployment" . }}
+---
+{{ include "service-lib.service" . }}
+---
+{{ include "service-lib.httproute" . }}
+---
+{{ include "service-lib.securitypolicy" . }}

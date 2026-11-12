@@ -12,7 +12,7 @@ run end to end**; configs for steps 1-7 are drafts to verify (chart value keys e
 | 4 | ZITADEL + its PostgreSQL | done (2026-11-09) |
 | 5 | JWT SecurityPolicy | done (2026-11-09) |
 | 6 | Observability stack | done (2026-11-10) |
-| 7 | Library chart and first service deployment | not verified |
+| 7 | Library chart and first service deployment | library chart done (2026-11-11); first real service pending |
 | 8 | Automation (`make up/reset`, Tilt or Skaffold) | Makefile drafted, Tilt/Skaffold not started |
 
 ## Step 1 notes (2026-11-08)
@@ -96,3 +96,18 @@ run end to end**; configs for steps 1-7 are drafts to verify (chart value keys e
 - Envoy tracing enabled (`samplingRate: 100`, OpenTelemetry to `observability/otel-collector:4317`, no ReferenceGrant
   needed); requests through Envoy appear in Tempo as `public.edge` / `ingress`.
 - Not set up: container stdout log shipping (Alloy or a filelog DaemonSet, decide later).
+
+## Step 7 notes, part 1: library chart (2026-11-11)
+- `charts/service-lib` 0.2.0: auth is on unless `auth.enabled: false` (a missing value used to mean no policy);
+  `auth.issuer` and `auth.audiences` are required when on; `jwksUri`, `jwksBackend` and `jwksBackendPort` have
+  defaults; the Deployment sets `OTEL_SERVICE_NAME` and `OTEL_EXPORTER_OTLP_ENDPOINT` (overridable through `env`).
+- Bug found by a server-side dry run: a numeric project ID was rendered as a YAML integer and the SecurityPolicy CRD
+  rejected it. An unquoted 18-digit ID can also lose float64 precision, so the chart now rejects non-string audiences
+  and renders them quoted.
+- Render checks: missing audiences, missing issuer or a missing `auth` block fail with a message; `auth.enabled: false`
+  renders no policy; `env` overrides the OTel defaults.
+- Stand-in deployed with `k8s/dev/lib-test` (traefik/whoami, release `libtest`): pod Running with probes on `/health`,
+  HTTPRoute and SecurityPolicy Accepted, OTel env present. No token → 401, garbage token → 401, valid token → 200 with
+  `X-User-Id` = sub, forged `X-User-ID` overwritten, wrong audience (via helm upgrade) → 403. Uninstalled afterwards.
+- Pending: a real service skeleton (own repository, language not chosen yet) deployed through its `deploy/chart`,
+  with its traces and metrics in Tempo and Prometheus.

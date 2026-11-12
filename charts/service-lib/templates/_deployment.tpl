@@ -22,13 +22,14 @@ spec:
           ports:
             - name: http
               containerPort: {{ .Values.service.port }}
-          {{- with .Values.env }}
+          {{- /* OTel defaults (traces, metrics, logs to the collector); values in .Values.env override them. */}}
+          {{- $otel := dict "OTEL_SERVICE_NAME" .Release.Name "OTEL_EXPORTER_OTLP_ENDPOINT" "http://otel-collector.observability.svc.cluster.local:4317" }}
+          {{- $env := merge (deepCopy (.Values.env | default dict)) $otel }}
           env:
-            {{- range $k, $v := . }}
+            {{- range $k, $v := $env }}
             - name: {{ $k }}
               value: {{ $v | quote }}
             {{- end }}
-          {{- end }}
           {{- if .Values.envFromSecret }}
           envFrom:
             - secretRef:

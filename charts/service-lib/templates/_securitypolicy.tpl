@@ -1,5 +1,15 @@
 {{- define "service-lib.securitypolicy" -}}
-{{- if and .Values.route.enabled .Values.auth.enabled }}
+{{- if and .Values.route.enabled (include "service-lib.authEnabled" .) }}
+{{- $auth := .Values.auth | default dict }}
+{{- $issuer := required "auth.issuer is required when auth is enabled" $auth.issuer }}
+{{- if not $auth.audiences }}
+{{- fail "auth.audiences is required when auth is enabled (the ZITADEL project ID); without it any project's token is accepted" }}
+{{- end }}
+{{- range $auth.audiences }}
+{{- if not (kindIs "string" .) }}
+{{- fail (printf "auth.audiences entries must be quoted strings (got %v): an unquoted 18-digit project ID is parsed as a number and can lose precision; use quotes in YAML or --set-string" .) }}
+{{- end }}
+{{- end }}
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: SecurityPolicy
 metadata:
@@ -14,18 +24,18 @@ spec:
   jwt:
     providers:
       - name: zitadel
-        issuer: {{ .Values.auth.issuer | quote }}
-        {{- with .Values.auth.audiences }}
+        issuer: {{ $issuer | quote }}
         audiences:
-          {{- toYaml . | nindent 10 }}
-        {{- end }}
+          {{- range $auth.audiences }}
+          - {{ . | quote }}
+          {{- end }}
         remoteJWKS:
-          uri: {{ .Values.auth.jwksUri | quote }}
+          uri: {{ $auth.jwksUri | default (printf "%s/oauth/v2/keys" (trimSuffix "/" $issuer)) | quote }}
           backendRefs:
             - group: gateway.envoyproxy.io
               kind: Backend
-              name: {{ .Values.auth.jwksBackend }}
-              port: 8080
+              name: {{ $auth.jwksBackend | default "zitadel-jwks" }}
+              port: {{ $auth.jwksBackendPort | default 8080 }}
         claimToHeaders:
           - header: x-user-id
             claim: sub

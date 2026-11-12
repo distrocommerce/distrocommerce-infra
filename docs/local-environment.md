@@ -97,8 +97,14 @@ Files: `k8s/observability/*`. Charts are pulled as OCI from ghcr.io and pinned i
 
 ## Step 7. Deploying a service with the library chart
 - Library chart: `charts/service-lib/` (see its README). A service repository has a thin chart (`deploy/chart`) that
-  depends on it, plus `values-local.yaml`. The release name is the service name. `auth.audiences` holds the ZITADEL
-  project ID; set `auth.enabled: false` for public routes.
+  depends on it, plus `values-local.yaml`. The release name is the service name. Auth is on by default and needs
+  `auth.issuer` and `auth.audiences` (the ZITADEL project ID, as a quoted string); set `auth.enabled: false` for public
+  routes. The chart sets the OTel env vars (service name, collector endpoint).
+- Test the library chart without a real service (stand-in `traefik/whoami`):
+  `helm dependency build k8s/dev/lib-test`, then
+  `helm upgrade --install libtest k8s/dev/lib-test -n apps --set-string 'auth.audiences={<project id>}' --wait`.
+  Expect: route and policy Accepted; no token → 401; token → 200 with `X-User-Id` = sub; forged `X-User-ID`
+  overwritten; upgrade with a wrong audience → 403. Then `helm uninstall libtest -n apps`.
 - Per-service `DATABASE_URL` secret: `make db-secrets` (add one block per service; the host `postgres` resolves through
   the docker network `distro`).
 - What the chart expects from a service: it listens on `service.port`, serves the liveness and readiness paths given in

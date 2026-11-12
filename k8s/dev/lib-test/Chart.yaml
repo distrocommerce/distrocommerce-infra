@@ -1,0 +1,11 @@
+# Step 7 test: a stand-in service (traefik/whoami) deployed through the service-lib library chart,
+# the same way a service repository's deploy/chart does it.
+apiVersion: v2
+name: lib-test
+description: Stand-in service to test charts/service-lib
+type: application
+version: 0.1.0
+dependencies:
+  - name: service-lib
+    version: 0.2.0
+    repository: file://../../../charts/service-lib

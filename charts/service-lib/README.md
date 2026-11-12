@@ -16,5 +16,20 @@ later an OCI registry) and includes the templates:
 
 Values used: `image.{repository,tag,pullPolicy}`, `replicaCount`, `service.port`,
 `probes.{liveness,readiness}`, `env` (map), `envFromSecret`, `resources`,
-`route.{enabled,host,pathPrefix}`, `auth.{enabled,issuer,jwksUri,jwksBackend,audiences}`.
+`route.{enabled,host,pathPrefix}`, `auth.{enabled,issuer,audiences,jwksUri,jwksBackend,jwksBackendPort}`.
 The Helm release name is the service name (Deployment, Service, HTTPRoute, SecurityPolicy).
+
+Auth (SecurityPolicy, rendered when `route.enabled`):
+- On unless `auth.enabled: false` (a missing value never leaves a route unprotected). Use `false` only for public routes.
+- Required when on: `auth.issuer` (locally `http://auth.localtest.me:8080`) and `auth.audiences` (the ZITADEL project
+  ID). Audiences must be strings: quote them in YAML (`audiences: ["<project id>"]`) or use `--set-string`;
+  an unquoted 18-digit ID is parsed as a number and can lose precision, so the chart rejects it.
+- Defaults: `jwksUri` = `<issuer>/oauth/v2/keys`, `jwksBackend` = `zitadel-jwks` (the Backend from `make auth-up`,
+  in namespace `apps`), `jwksBackendPort` = 8080.
+- Envoy validates the token and sets `X-User-ID` to its `sub` (a client-supplied value is overwritten). Missing or
+  invalid token → 401, wrong audience → 403.
+
+OpenTelemetry: the Deployment always sets `OTEL_SERVICE_NAME` (release name) and `OTEL_EXPORTER_OTLP_ENDPOINT`
+(`http://otel-collector.observability.svc.cluster.local:4317`); an entry with the same name in `env` overrides them.
+
+Test chart: `k8s/dev/lib-test` deploys `traefik/whoami` through this chart (see the runbook, step 7).

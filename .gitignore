@@ -3,3 +3,7 @@
 .idea/
 
 .DS_Store
+
+# Helm dependency build output
+k8s/dev/**/charts/
+k8s/dev/**/Chart.lock

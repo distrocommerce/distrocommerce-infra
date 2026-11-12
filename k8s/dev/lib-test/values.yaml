@@ -1,0 +1,17 @@
+# auth.audiences is not set here on purpose: the ZITADEL project ID changes after `make reset`.
+# Pass it at install time as a string: --set-string 'auth.audiences={<project id>}'
+image:
+  repository: traefik/whoami
+  tag: v1.10
+replicaCount: 1
+service:
+  port: 80
+probes:
+  liveness: /health
+  readiness: /health
+route:
+  enabled: true
+  host: api.localtest.me
+  pathPrefix: /
+auth:
+  issuer: http://auth.localtest.me:8080
