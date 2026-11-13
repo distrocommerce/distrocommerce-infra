@@ -93,6 +93,9 @@ Files: `k8s/observability/*`. Charts are pulled as OCI from ghcr.io and pinned i
 - Envoy tracing: `telemetry.tracing` in `k8s/envoy-gateway.yaml` (explicit `samplingRate`; no ReferenceGrant needed for
   the cross-namespace collector). Requests through Envoy show up in Tempo as service `public.edge`, root span `ingress`.
 - Grafana keeps data sources in its database (emptyDir): after removing one from the values, restart `kps-grafana`.
+- Dashboards: JSON files in `k8s/observability/dashboards/`; `make dashboards` (also run by `obs-up`) applies each as a
+  ConfigMap labeled `grafana_dashboard=1`, which the Grafana sidecar loads. Edit the JSON and rerun `make dashboards`;
+  changes made in the Grafana UI are lost when the pod restarts.
 - Container stdout log shipping is not set up (decide later: Alloy or a filelog DaemonSet).
 
 ## Step 7. Deploying a service with the library chart
@@ -120,6 +123,13 @@ Files: `k8s/observability/*`. Charts are pulled as OCI from ghcr.io and pinned i
 - Traces: Grafana → Explore → Tempo → TraceQL `{resource.service.name="profile"}` (a search needs a time range).
   One trace holds Envoy's `ingress` and router spans, the service's `GET /v1/users/me` span and its SQL spans.
   The service's log lines carry the same `trace_id`.
+- Metrics: Grafana → Dashboards → **Service overview**, pick the service (`job` = `OTEL_SERVICE_NAME` = release =
+  Deployment name, namespace `apps`): requests/s, 4xx and 5xx per route and status, error rate (total and 5xx per
+  route), latency (p50/p95/p99, p95 per route, heatmap); saturation: replicas, restarts, CPU and memory per pod
+  against requests and limits, CPU throttling, Go runtime (memory, goroutines, allocation rate, scheduling latency;
+  needs `go.opentelemetry.io/contrib/instrumentation/runtime` in the service); DB operations and the pgx pool.
+  Any service using the standard OTel HTTP server metrics appears there without a new dashboard. 401/403 from
+  Envoy never reach the service and are not counted (needs Envoy metrics; not set up).
 
 ## Step 8. Automation
 `make up` / `make reset` are drafted in the Makefile (not yet exercised). Optional Tilt (one Tiltfile driving sibling

@@ -126,3 +126,14 @@ run end to end**; configs for steps 1-7 are drafts to verify (chart value keys e
 - Metrics: `job="profile"` in Prometheus via the collector: `http_server_request_duration_seconds` (with `http_route`,
   `http_response_status_code`), request/response body sizes, `db_client_operation_duration_seconds`, `pgxpool_*`.
   The request counts matched the test requests (one 404, one 200).
+
+## Dashboards (2026-11-12)
+- `k8s/observability/dashboards/service-overview.json` (uid `service-overview`), applied as a ConfigMap by
+  `make dashboards` (called from `obs-up`). One generic dashboard for all services, selected by `job`: RED metrics
+  per route and status (requests/s, 4xx, 5xx, error rate total and per route, latency p50/p95/p99, p95 per route,
+  heatmap); saturation from kube-state-metrics and cAdvisor (replicas, restarts, CPU/memory per pod vs requests and
+  limits, CPU throttling) and from the Go runtime instrumentation (profile-service now exports it); DB and pgx pool.
+  Every query checked against Prometheus; loaded by the sidecar (provisioned, General folder).
+- Not covered: 401/403 rejected by Envoy (no Envoy PodMonitor yet), container logs.
+- Open: OTel series carry no per-pod label (`service.instance.id` is not set), so with more than one replica the
+  pods write into the same series and counters/rates are wrong. Fix belongs in `service-lib`.

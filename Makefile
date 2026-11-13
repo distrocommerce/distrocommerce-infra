@@ -15,7 +15,7 @@ TEMPO_VERSION         ?= 3.2.1
 LOKI_VERSION          ?= 21.1.1
 OTEL_VERSION          ?= 0.178.2
 
-.PHONY: doctor up reset infra-up infra-down infra-reset cluster-up cluster-down edge-up auth-up obs-up db-secrets
+.PHONY: doctor up reset infra-up infra-down infra-reset cluster-up cluster-down edge-up auth-up obs-up dashboards db-secrets
 
 doctor: ## run before the cluster exists (ports 8080/8443 must be free)
 	@for t in docker kind kubectl helm make jq psql; do \
@@ -87,6 +87,17 @@ obs-up:
 	helm upgrade --install otel-collector oci://ghcr.io/open-telemetry/opentelemetry-helm-charts/opentelemetry-collector \
 	  --version $(OTEL_VERSION) -n observability -f k8s/observability/otel-values.yaml --wait
 	kubectl apply -f k8s/observability/grafana-route.yaml
+	$(MAKE) dashboards
+
+# Grafana dashboards: one ConfigMap per JSON file in k8s/observability/dashboards/.
+# The Grafana sidecar loads ConfigMaps labeled grafana_dashboard=1.
+dashboards:
+	@for f in k8s/observability/dashboards/*.json; do \
+	  n=dashboard-$$(basename $$f .json); \
+	  kubectl create configmap $$n -n observability --from-file=$$f --dry-run=client -o yaml \
+	    | kubectl label --local -f - grafana_dashboard=1 -o yaml \
+	    | kubectl apply -f -; \
+	done
 
 # Per-service DB secrets (add a block per service).
 db-secrets:
