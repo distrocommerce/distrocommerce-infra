@@ -135,5 +135,11 @@ run end to end**; configs for steps 1-7 are drafts to verify (chart value keys e
   limits, CPU throttling) and from the Go runtime instrumentation (profile-service now exports it); DB and pgx pool.
   Every query checked against Prometheus; loaded by the sidecar (provisioned, General folder).
 - Not covered: 401/403 rejected by Envoy (no Envoy PodMonitor yet), container logs.
-- Open: OTel series carry no per-pod label (`service.instance.id` is not set), so with more than one replica the
-  pods write into the same series and counters/rates are wrong. Fix belongs in `service-lib`.
+- Per-pod series: `service-lib` 0.3.0 sets `OTEL_RESOURCE_ATTRIBUTES` (`service.instance.id` and `k8s.pod.name` = pod
+  name via the downward API, `k8s.namespace.name`), which becomes the Prometheus `instance` label. Before, replicas
+  wrote into one series and counters looked like constant resets. Checked with 2 replicas: 100 requests through the
+  Service counted 54 + 46 per instance, no resets.
+- Open: a new series' first sample already contains its requests (the `prometheusremotewrite` exporter drops the
+  OTel start time), so `increase()`/`rate()` miss the requests before the first export of every new pod and every new
+  route/status combination (a route's first 5xx is not seen). Fix: send OTLP to Prometheus' native OTLP receiver
+  with created-timestamp zero ingestion instead of remote write (step 6 change; verify the flags for Prometheus v3.16).

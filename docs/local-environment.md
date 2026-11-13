@@ -102,7 +102,8 @@ Files: `k8s/observability/*`. Charts are pulled as OCI from ghcr.io and pinned i
 - Library chart: `charts/service-lib/` (see its README). A service repository has a thin chart (`deploy/chart`) that
   depends on it, plus `values-local.yaml`. The release name is the service name. Auth is on by default and needs
   `auth.issuer` and `auth.audiences` (the ZITADEL project ID, as a quoted string); set `auth.enabled: false` for public
-  routes. The chart sets the OTel env vars (service name, collector endpoint).
+  routes. The chart sets the OTel env vars (service name, collector endpoint, and `service.instance.id` = pod name, so
+  each replica gets its own series with Prometheus label `instance`).
 - Test the library chart without a real service (stand-in `traefik/whoami`):
   `helm dependency build k8s/dev/lib-test`, then
   `helm upgrade --install libtest k8s/dev/lib-test -n apps --set-string 'auth.audiences={<project id>}' --wait`.

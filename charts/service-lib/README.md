@@ -29,7 +29,11 @@ Auth (SecurityPolicy, rendered when `route.enabled`):
 - Envoy validates the token and sets `X-User-ID` to its `sub` (a client-supplied value is overwritten). Missing or
   invalid token → 401, wrong audience → 403.
 
-OpenTelemetry: the Deployment always sets `OTEL_SERVICE_NAME` (release name) and `OTEL_EXPORTER_OTLP_ENDPOINT`
-(`http://otel-collector.observability.svc.cluster.local:4317`); an entry with the same name in `env` overrides them.
+OpenTelemetry: the Deployment always sets `OTEL_SERVICE_NAME` (release name), `OTEL_EXPORTER_OTLP_ENDPOINT`
+(`http://otel-collector.observability.svc.cluster.local:4317`) and `OTEL_RESOURCE_ATTRIBUTES`
+(`service.instance.id` and `k8s.pod.name` = pod name, `k8s.namespace.name`); an entry with the same name in `env`
+overrides them. `service.instance.id` becomes the Prometheus `instance` label, so each replica has its own series; an
+override of `OTEL_RESOURCE_ATTRIBUTES` must keep it (`service.instance.id=$(POD_NAME),...`). `POD_NAME` and
+`POD_NAMESPACE` come from the downward API and are reserved.
 
 Test chart: `k8s/dev/lib-test` deploys `traefik/whoami` through this chart (see the runbook, step 7).

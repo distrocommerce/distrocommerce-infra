@@ -2,4 +2,4 @@ apiVersion: v2
 name: service-lib
 description: Shared Helm templates for DistroCommerce services
 type: library
-version: 0.2.0
+version: 0.3.0
