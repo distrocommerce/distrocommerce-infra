@@ -33,7 +33,8 @@ run end to end**; configs for steps 1-7 are drafts to verify (chart value keys e
 ## Step 2 notes (2026-11-08)
 - Host ports changed from 80/443 to 8080/8443 (`kind/kind.yaml`, `make doctor`, docs). Local URLs and the ZITADEL
   issuer now need `:8080`; steps 3-6 files are not updated yet.
-- `make cluster-up` with kind v0.31.0 (node image `kindest/node:v1.35.0`, kind's default, not pinned in `kind.yaml`).
+- `make cluster-up` with kind v0.31.0 (node image `kindest/node:v1.35.0`, kind's default; now pinned by digest in
+  `kind.yaml`, see "Image pins").
   kind printed the expected `KIND_EXPERIMENTAL_DOCKER_NETWORK` warning and put `distro-control-plane` on the `distro`
   network next to the four stores.
 - Node Ready, all kube-system and local-path-storage pods Running. Ports: `127.0.0.1:8080->30080`, `127.0.0.1:8443->30443`.
@@ -42,7 +43,7 @@ run end to end**; configs for steps 1-7 are drafts to verify (chart value keys e
 ## Step 3 notes (2026-11-08)
 - `make edge-up`: release `eg` deployed (`gateway-helm-v1.9.3`, app v1.9.3), 18 Gateway API / Envoy Gateway CRDs.
   GatewayClass `eg` Accepted, Gateway `edge/public` Programmed.
-- Envoy Proxy image (Envoy Gateway default, not pinned by us): `envoyproxy/envoy:distroless-v1.39.5`.
+- Envoy Proxy image (Envoy Gateway default): `envoyproxy/envoy:distroless-v1.39.5`; now pinned, see "Image pins".
 - Verified: the EnvoyProxy nodePort patch (Service `80:30080/TCP`) and the Backend API key
   `config.envoyGateway.extensionApis.enableBackend` (in the `envoy-gateway-config` ConfigMap; the controller watches
   `Backend`). A real `Backend` object is first used in step 4.
@@ -139,7 +140,44 @@ run end to end**; configs for steps 1-7 are drafts to verify (chart value keys e
   name via the downward API, `k8s.namespace.name`), which becomes the Prometheus `instance` label. Before, replicas
   wrote into one series and counters looked like constant resets. Checked with 2 replicas: 100 requests through the
   Service counted 54 + 46 per instance, no resets.
-- Open: a new series' first sample already contains its requests (the `prometheusremotewrite` exporter drops the
-  OTel start time), so `increase()`/`rate()` miss the requests before the first export of every new pod and every new
-  route/status combination (a route's first 5xx is not seen). Fix: send OTLP to Prometheus' native OTLP receiver
-  with created-timestamp zero ingestion instead of remote write (step 6 change; verify the flags for Prometheus v3.16).
+- First requests of a new series: with remote write a new series' first sample already contained its requests, so
+  `increase()`/`rate()` missed them (every new pod and route/status; a route's first 5xx was invisible). Metrics now go
+  collector → Prometheus OTLP receiver (`enableOTLPReceiver`, translation `UnderscoreEscapingWithSuffixes`, so names
+  are unchanged) with `created-timestamp-zero-ingestion`, which writes a 0 sample at each point's start time
+  (OTLP support checked in the v3.16.0 source; the docs list only scrape protocols). `service-lib` 0.4.0 sets
+  `OTEL_GO_X_PER_SERIES_START_TIMESTAMPS=true` (Go SDK v1.47, experimental) so a series starts at its first
+  measurement, not at process start. Checked: new 200 and 405 series on a running pod, 30 and 7 requests →
+  `increase([2m])` 35 and 8.2 (extrapolated; 0 before), raw samples start with 0. Remote-write receiver disabled.
+  OTLP series no longer carry `otel_scope_*` labels.
+
+## Image pins (2026-11-14)
+- `kind/kind.yaml`: `kindest/node:v1.35.0@sha256:452d707d…`, the digest in the kind v0.31.0 release notes and the one
+  the running node uses. The `v1.35.0` tag itself already points to another digest (re-pushed), so the digest matters.
+- `k8s/envoy-gateway.yaml`: EnvoyProxy `envoyDeployment.container.image`
+  `envoyproxy/envoy:distroless-v1.39.5@sha256:9d84a586…`, exactly what Envoy Gateway v1.9.3 deployed; applying it did not
+  roll the Envoy Deployment. Both have linux/arm64 builds (`docker manifest inspect`).
+- The kind pin takes effect on the next `make cluster-up`; not exercised by recreating the cluster.
+
+## lib-test host (2026-11-14)
+- `k8s/dev/lib-test` moved from `api.localtest.me` `/` to its own host `libtest.localtest.me`: on the shared host it
+  caught every path the services do not route (with auth). Checked with libtest installed: `libtest.localtest.me/` →
+  401 (its policy), `api.localtest.me/` and `/foo` → 404 from Envoy, `/v1/users/me` → 401 (profile); both routes Accepted.
+  Runbook: `helm dependency update` instead of `build` for lib-test.
+
+## Security context (2026-11-14)
+- `service-lib` 0.5.0: pod `runAsNonRoot: true` and `seccompProfile: RuntimeDefault`; container
+  `allowPrivilegeEscalation: false`, `readOnlyRootFilesystem: true`, `capabilities.drop: [ALL]`. `podSecurityContext`
+  and `securityContext` values are merged over the defaults (lists replaced). No writable volume (none needed yet).
+- Checks: `helm template` (defaults, pod override, container override), server-side dry run; lib-test (whoami as
+  65532, which binds port 80 without capabilities: containerd allows unprivileged ports in pods) and profile
+  (distroless nonroot) Running; `/readyz` 200, `/v1/users/me` 200; through Envoy 401 without a token. A server-side
+  dry run of the label `pod-security.kubernetes.io/enforce=restricted` on `apps` reports no violations (not enforced).
+
+## X-User-ID on public routes (2026-11-14)
+- Found: with `auth.enabled: false` nothing touched `X-User-ID`; lib-test on the old chart passed `X-User-ID: hacker`
+  through to the backend. `service-lib` 0.5.0 adds a RequestHeaderModifier `remove: [x-user-id]` to the HTTPRoute when
+  auth is off. Checked through Envoy: the header no longer arrives (also when sent twice with different case).
+- Not removed when auth is on: Envoy Gateway renders the filter as route `request_headers_to_remove`, which the router
+  applies after `jwt_authn`. Tested with a throwaway route and a SecurityPolicy with an inline JWKS (own key and
+  token): without the filter the backend gets the token `sub` and a forged value is overwritten; with it the header is
+  gone entirely. Test resources deleted.

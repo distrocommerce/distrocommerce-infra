@@ -93,6 +93,8 @@ Files: `k8s/observability/*`. Charts are pulled as OCI from ghcr.io and pinned i
 - Envoy tracing: `telemetry.tracing` in `k8s/envoy-gateway.yaml` (explicit `samplingRate`; no ReferenceGrant needed for
   the cross-namespace collector). Requests through Envoy show up in Tempo as service `public.edge`, root span `ingress`.
 - Grafana keeps data sources in its database (emptyDir): after removing one from the values, restart `kps-grafana`.
+- Metrics path: collector → Prometheus' OTLP receiver (`/api/v1/otlp`), not remote write, with
+  `created-timestamp-zero-ingestion`, so the first requests of a new series are counted (see `kps-values.yaml`).
 - Dashboards: JSON files in `k8s/observability/dashboards/`; `make dashboards` (also run by `obs-up`) applies each as a
   ConfigMap labeled `grafana_dashboard=1`, which the Grafana sidecar loads. Edit the JSON and rerun `make dashboards`;
   changes made in the Grafana UI are lost when the pod restarts.
@@ -104,15 +106,20 @@ Files: `k8s/observability/*`. Charts are pulled as OCI from ghcr.io and pinned i
   `auth.issuer` and `auth.audiences` (the ZITADEL project ID, as a quoted string); set `auth.enabled: false` for public
   routes. The chart sets the OTel env vars (service name, collector endpoint, and `service.instance.id` = pod name, so
   each replica gets its own series with Prometheus label `instance`).
-- Test the library chart without a real service (stand-in `traefik/whoami`):
-  `helm dependency build k8s/dev/lib-test`, then
+- Test the library chart without a real service (stand-in `traefik/whoami` on its own host,
+  `http://libtest.localtest.me:8080/`, so it does not overlap the services on `api.localtest.me`):
+  `helm dependency update k8s/dev/lib-test` (`Chart.lock` is not committed, so `build` fails after a library version
+  bump), then
   `helm upgrade --install libtest k8s/dev/lib-test -n apps --set-string 'auth.audiences={<project id>}' --wait`.
   Expect: route and policy Accepted; no token → 401; token → 200 with `X-User-Id` = sub; forged `X-User-ID`
   overwritten; upgrade with a wrong audience → 403. Then `helm uninstall libtest -n apps`.
 - Per-service `DATABASE_URL` secret: `make db-secrets` (add one block per service; the host `postgres` resolves through
   the docker network `distro`).
 - What the chart expects from a service: it listens on `service.port`, serves the liveness and readiness paths given in
-  `probes.*`, and reads its configuration from `env` and the `envFromSecret` secret. Envoy sends the token `sub` in `X-User-ID`.
+  `probes.*`, and reads its configuration from `env` and the `envFromSecret` secret. Pods are secure by default
+  (Pod Security "restricted": non-root, RuntimeDefault seccomp, read-only root filesystem, no capabilities): the image
+  must run as a numeric non-root user and must not write files; override single keys through `podSecurityContext` /
+  `securityContext` (lib-test sets `runAsUser`, because whoami runs as root). Envoy sends the token `sub` in `X-User-ID`.
 - Build and deploy loop from a service repository: build an image tagged with the short git SHA,
   `kind load docker-image <image> --name distro`, then
   `helm upgrade --install <service> deploy/chart -n apps -f deploy/chart/values-local.yaml --set image.tag=<tag>`.

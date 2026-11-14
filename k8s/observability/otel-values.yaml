@@ -24,8 +24,9 @@ config:
       tls: {insecure: true}
     otlp_http/loki:
       endpoint: http://loki.observability.svc.cluster.local:3100/otlp
-    prometheusremotewrite:
-      endpoint: http://kps-prometheus.observability.svc.cluster.local:9090/api/v1/write
+    # Prometheus' native OTLP receiver (the exporter appends /v1/metrics).
+    otlp_http/prometheus:
+      endpoint: http://kps-prometheus.observability.svc.cluster.local:9090/api/v1/otlp
   service:
     pipelines:
       traces:
@@ -35,7 +36,7 @@ config:
       metrics:
         receivers: [otlp]
         processors: [memory_limiter, batch]
-        exporters: [prometheusremotewrite]
+        exporters: [otlp_http/prometheus]
       logs:
         receivers: [otlp]
         processors: [memory_limiter, batch]

@@ -18,7 +18,15 @@ prometheusOperator:
 prometheus:
   prometheusSpec:
     retention: 3d
-    enableRemoteWriteReceiver: true
+    # Metrics arrive from the OTel Collector over OTLP (/api/v1/otlp/v1/metrics), not remote write: OTLP keeps each
+    # point's start time, and created-timestamp-zero-ingestion turns it into a 0 sample, so increase()/rate() count
+    # the first requests of a new series (new pod, new route/status). Checked in the v3.16.0 source: the OTLP
+    # handler passes the start time to TSDB (the feature-flag docs list only scrape protocols).
+    enableOTLPReceiver: true
+    enableFeatures:
+      - created-timestamp-zero-ingestion
+    otlp:
+      translationStrategy: UnderscoreEscapingWithSuffixes   # names as before: http_server_request_duration_seconds_*
     serviceMonitorSelectorNilUsesHelmValues: false
     podMonitorSelectorNilUsesHelmValues: false
     storageSpec:

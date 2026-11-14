@@ -7,6 +7,11 @@ spec:
   provider:
     type: Kubernetes
     kubernetes:
+      # The Envoy image Envoy Gateway v1.9.3 deploys by default, pinned so a gateway upgrade does not change Envoy
+      # silently. Change it together with EG_VERSION (see the EG compatibility matrix). linux/arm64: yes.
+      envoyDeployment:
+        container:
+          image: docker.io/envoyproxy/envoy:distroless-v1.39.5@sha256:9d84a586119a27b50437dbb01eccd4722832741539b1ed53c8e9d6da6067a6e0
       envoyService:
         type: NodePort
         patch:

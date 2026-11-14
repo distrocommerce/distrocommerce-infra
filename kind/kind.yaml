@@ -3,6 +3,9 @@ apiVersion: kind.x-k8s.io/v1alpha4
 name: distro
 nodes:
   - role: control-plane
+    # The node image published for kind v0.31.0 (release notes), pinned by digest: kind re-pushes tags, and the
+    # v1.35.0 tag already points to a different digest. Change it together with the kind version. linux/arm64: yes.
+    image: kindest/node:v1.35.0@sha256:452d707d4862f52530247495d180205e029056831160e22870e37e3f6c1ac31f
     extraPortMappings:
       # Mac 8080/8443 -> node ports used by the Envoy Gateway NodePort Service
       - containerPort: 30080

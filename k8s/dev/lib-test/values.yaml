@@ -4,14 +4,19 @@ image:
   repository: traefik/whoami
   tag: v1.10
 replicaCount: 1
+# traefik/whoami has no USER (runs as root), which runAsNonRoot rejects.
+podSecurityContext:
+  runAsUser: 65532
+  runAsGroup: 65532
 service:
   port: 80
 probes:
   liveness: /health
   readiness: /health
+# Own host: api.localtest.me belongs to the real services (profile has /v1/users there).
 route:
   enabled: true
-  host: api.localtest.me
+  host: libtest.localtest.me
   pathPrefix: /
 auth:
   issuer: http://auth.localtest.me:8080
