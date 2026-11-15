@@ -40,14 +40,57 @@ grafana:
   adminPassword: admin   # local only
   sidecar:
     datasources:
+      name: Prometheus
+      uid: prometheus   # the chart default, pinned: dashboards and links refer to it
       alertmanager:
         enabled: false   # Alertmanager is disabled above
+  # Fixed UIDs (prometheus, tempo, loki) so links and dashboards do not depend on generated IDs.
+  # Field names checked against the Grafana v13.3.0 source (TraceToLogsOptionsV2, TraceToMetricsOptions, Loki
+  # DerivedFieldConfig). Grafana expands $VAR / ${VAR} in provisioning files, so link variables are written $${...}.
+  # profile-service's OTLP logs in Loki: index label service_name; trace_id / span_id are structured metadata.
   additionalDataSources:
     - name: Tempo
       type: tempo
+      uid: tempo
       access: proxy
       url: http://tempo.observability.svc.cluster.local:3200
+      jsonData:
+        nodeGraph:
+          enabled: true
+        serviceMap:
+          datasourceUid: prometheus   # needs Tempo's metrics generator (traces_service_graph_*), not enabled yet
+        tracesToLogsV2:
+          datasourceUid: loki
+          spanStartTimeShift: "-1m"
+          spanEndTimeShift: "1m"
+          tags:
+            - key: service.name
+              value: service_name
+          # Explicit query: trace_id is structured metadata, not part of the log line.
+          customQuery: true
+          query: '{$${__tags}} | trace_id="$${__span.traceId}"'
+        tracesToMetrics:
+          datasourceUid: prometheus
+          spanStartTimeShift: "-5m"
+          spanEndTimeShift: "5m"
+          tags:
+            - key: service.name
+              value: job
+          queries:
+            - name: Request rate
+              query: 'sum(rate(http_server_request_duration_seconds_count{$${__tags}}[$$__rate_interval]))'
+            - name: p95 latency
+              query: 'histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket{$${__tags}}[$$__rate_interval])))'
     - name: Loki
       type: loki
+      uid: loki
       access: proxy
       url: http://loki.observability.svc.cluster.local:3100
+      jsonData:
+        derivedFields:
+          - name: TraceID
+            matcherType: label        # a label or structured metadata field, here trace_id
+            matcherRegex: trace_id
+            datasourceUid: tempo
+            url: '$${__value.raw}'
+            urlDisplayLabel: View trace

@@ -92,7 +92,13 @@ Files: `k8s/observability/*`. Charts are pulled as OCI from ghcr.io and pinned i
   `{service_name="step6-check"}`, Prometheus `gen{job="step6-check"}`.
 - Envoy tracing: `telemetry.tracing` in `k8s/envoy-gateway.yaml` (explicit `samplingRate`; no ReferenceGrant needed for
   the cross-namespace collector). Requests through Envoy show up in Tempo as service `public.edge`, root span `ingress`.
-- Grafana keeps data sources in its database (emptyDir): after removing one from the values, restart `kps-grafana`.
+- Grafana keeps data sources in its database (emptyDir): after removing one from the values, or changing a UID,
+  restart `kps-grafana`.
+- Data sources have fixed UIDs `prometheus`, `tempo`, `loki` and are linked (`kps-values.yaml`): Tempo span → Loki logs
+  (`{service_name="<service>"} | trace_id="<id>"`; in OTLP logs `trace_id`/`span_id` are structured metadata, not
+  part of the line), span → Prometheus request rate and p95 (`job` = service name), Loki line → Tempo trace (derived
+  field on `trace_id`). Tempo's Service Graph tab stays empty until Tempo's metrics generator is enabled. Link
+  variables are written `$${...}` in the values, because Grafana expands `${...}` in provisioning files.
 - Metrics path: collector → Prometheus' OTLP receiver (`/api/v1/otlp`), not remote write, with
   `created-timestamp-zero-ingestion`, so the first requests of a new series are counted (see `kps-values.yaml`).
 - Dashboards: JSON files in `k8s/observability/dashboards/`; `make dashboards` (also run by `obs-up`) applies each as a

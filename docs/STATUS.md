@@ -181,3 +181,19 @@ run end to end**; configs for steps 1-7 are drafts to verify (chart value keys e
   applies after `jwt_authn`. Tested with a throwaway route and a SecurityPolicy with an inline JWKS (own key and
   token): without the filter the backend gets the token `sub` and a forged value is overwritten; with it the header is
   gone entirely. Test resources deleted.
+
+## Logs in Loki and data source links (2026-11-15)
+- profile-service exports its logs over OTLP (its commit `b4d57c7`, deployed): in Loki the index labels are
+  `service_name`, `service_instance_id`, `k8s_pod_name`, `k8s_namespace_name`; `trace_id`, `span_id` and the slog
+  attributes are structured metadata; the line is the message.
+- Grafana data sources: fixed UIDs `prometheus` (kps `grafana.sidecar.datasources.uid`, pinned), `tempo`, `loki`.
+  Tempo: `tracesToLogsV2` → Loki with a custom query `{${__tags}} | trace_id="${__span.traceId}"` (tag
+  `service.name` → `service_name`, ±1m), `tracesToMetrics` → Prometheus (request rate, p95; `service.name` → `job`),
+  `serviceMap` → Prometheus, node graph on. Loki: derived field `trace_id` (matcherType label) → Tempo. Field names
+  checked in the Grafana v13.3.0 source; Grafana's built-in Loki trace-to-logs query depends on a feature flag, hence the
+  custom query. `$$` escapes in the values (Grafana expands `${...}` in provisioning); the live data sources show `${...}`.
+- Checked with a real request through Envoy (token, 404 profile_not_found): trace `e0d345e8…` has Envoy `ingress` and
+  router, profile `GET /v1/users/me`, `pool.acquire`, `SELECT`. The trace-to-logs query returns its one log line
+  (span_id = profile's server span); that line's `trace_id` arrives as structured metadata (label type S) and looks up
+  the same trace (5 spans). Trace-to-metrics queries return data. Not checked by clicking in the browser.
+- Service Graph: configured, but no `traces_service_graph_*` series (Tempo's metrics generator is deferred).
