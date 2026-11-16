@@ -26,9 +26,10 @@ tempo:
       path: /var/tempo/generator/wal   # on the PVC; the chart default /tmp/tempo is an emptyDir
     processor:
       service_graphs:
-        # otelpgx emits pool.acquire as a CLIENT span with db.* attributes, so Tempo would count it as a second
-        # profile -> postgres call (doubled rate, pool waits mixed into query latency). Proper fix in
-        # profile-service (follow-up): INTERNAL span kind or otelpgx WithDisableAcquireTracer().
+        # Guard only: otelpgx emits pool.acquire as a CLIENT span with db.* attributes, so Tempo would count it as a
+        # second call to the database (doubled rate, pool waits mixed into query latency). Services turn acquire
+        # tracing off with otelpgx.WithDisableAcquireTracer() (profile-service does; required in docs/workflow.md);
+        # this filter keeps the service graph right if a service forgets it.
         filter_policies:
           - exclude:
               match_type: strict

@@ -208,8 +208,9 @@ step 8 (`make up`/`reset`) is not.
   Prometheus' remote-write receiver is back on (`enableRemoteWriteReceiver`), used only by Tempo; the collector stays
   on OTLP. Span metrics stay off: they would duplicate the services' SDK RED metrics.
 - `pool.acquire` is emitted as a CLIENT span by otelpgx (v0.13.0, kind hardcoded), so it would double the database
-  edge and mix pool waits into its latency; the generator excludes it (`filter_policies`, intrinsic `name`). Follow-up
-  for profile-service: make it INTERNAL or turn it off with otelpgx `WithDisableAcquireTracer()`, then drop the filter.
+  edge and mix pool waits into its latency; the generator excludes it (`filter_policies`, intrinsic `name`). Done for
+  profile-service (its `ebab05e`: `otelpgx.WithDisableAcquireTracer()`, deployed; traces have no `pool.acquire`). The
+  filter stays as a guard for services that forget the option (required in `docs/workflow.md`).
 - Checked through Envoy: 10 requests without a token (401 at Envoy) and 20 with a token (404 profile_not_found).
   Edges (`traces_service_graph_request_total`, plus `_failed_total` and the client/server seconds histograms):
   `client="user", server="public.edge", connection_type="virtual_node"` 20;

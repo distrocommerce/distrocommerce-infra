@@ -16,6 +16,11 @@ service provides the equivalents listed under "What each service provides".
 - **Images**: multi-stage build, distroless non-root runtime, linux/arm64 builds available (Apple silicon), every
   version pinned, never `latest`. The pod runs with the `service-lib` security defaults (non-root, read-only root
   filesystem, no capabilities), so the service writes no files at runtime.
+- **PostgreSQL tracing** (services using pgx with `github.com/exaring/otelpgx`): create the tracer with
+  `otelpgx.NewTracer(otelpgx.WithDisableAcquireTracer())`. otelpgx emits pool acquires as CLIENT spans with the database
+  attributes, so Tempo's service graph would count each one as a second database call. Acquire waits stay visible in
+  the pool metrics (`otelpgx.RecordStats`). Tempo filters `pool.acquire` out as a guard, but every service sets the
+  option. The option also removes the `acquire` operation from otelpgx's operation metrics.
 - **Identity**: Envoy validates the JWT and sets `X-User-ID` to the token `sub`. A service trusts that header and does
   no JWT validation itself.
 - **Commits**: never commit secrets; everything in English; no AI attribution. Never commit without the user's
