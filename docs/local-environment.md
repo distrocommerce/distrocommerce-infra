@@ -111,6 +111,12 @@ Files: `k8s/observability/*`. Charts are pulled as OCI from ghcr.io and pinned i
 - Dashboards: JSON files in `k8s/observability/dashboards/`; `make dashboards` (also run by `obs-up`) applies each as a
   ConfigMap labeled `grafana_dashboard=1`, which the Grafana sidecar loads. Edit the JSON and rerun `make dashboards`;
   changes made in the Grafana UI are lost when the pod restarts.
+- Envoy gateway metrics: `k8s/observability/envoy-podmonitor.yaml` (applied by `obs-up`) scrapes the Envoy proxies
+  (port `metrics` 19001, `/stats/prometheus`) and keeps only the Gateway dashboard's metrics. Dashboard **Gateway**:
+  every request at the listener, including 401/403 from the JWT filter (`envoy_http_jwt_authn_denied`) and 404 without
+  a route (`envoy_http_no_route`), latency, and per route rule upstream traffic. Those counters are per listener, not
+  per route or host. Check: `curl http://api.localtest.me:8080/v1/users/me` (401) and `/nope` (404) raise
+  `envoy_http_jwt_authn_denied` and `envoy_http_no_route` within a scrape (15 s).
 - Container stdout log shipping is not set up (decide later: Alloy or a filelog DaemonSet).
 
 ## Step 7. Deploying a service with the library chart
@@ -150,7 +156,7 @@ Files: `k8s/observability/*`. Charts are pulled as OCI from ghcr.io and pinned i
   against requests and limits, CPU throttling, Go runtime (memory, goroutines, allocation rate, scheduling latency;
   needs `go.opentelemetry.io/contrib/instrumentation/runtime` in the service); DB operations and the pgx pool.
   Any service using the standard OTel HTTP server metrics appears there without a new dashboard. 401/403 from
-  Envoy never reach the service and are not counted (needs Envoy metrics; not set up).
+  Envoy never reach the service and are not counted there; they are on the Gateway dashboard (step 6).
 
 ## Step 8. Automation
 `make up` / `make reset` are drafted in the Makefile (not yet exercised). Optional Tilt (one Tiltfile driving sibling

@@ -49,4 +49,8 @@ service sets only what differs, e.g. `podSecurityContext.runAsUser: 65532` for a
 run as a numeric non-root user (distroless `nonroot` does); the root filesystem is read-only and there is no writable
 volume, so the service must not write files.
 
+Releases: every version bump in `Chart.yaml` gets an annotated git tag `service-lib-vX.Y.Z` on the commit that
+changes it (first: `service-lib-v0.5.0`). Service repositories check out that tag in CI, so a version is released only
+once its tag exists.
+
 Test chart: `k8s/dev/lib-test` deploys `traefik/whoami` through this chart (see the runbook, step 7).

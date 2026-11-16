@@ -117,6 +117,7 @@ step 8 (`make up`/`reset`) is not.
 - `profile-service` (separate repository, Go 1.27.3): skeleton reviewed and fixed (image tag gets a `-dirty-<hash>`
   suffix for uncommitted trees, `/readyz` DB ping 800 ms below the 1 s probe timeout, values split). Unit tests,
   golangci-lint and the store test against the compose PostgreSQL pass.
+- (2026-11-16) The Go baseline for every service repository is now 1.27.4 (`docs/workflow.md`, "Service conventions").
 - `make db-secrets` created `apps/profile-db`. Image `profile:<sha>` builds for arm64, runs as 65532:65532, ~35 MB.
 - `make image kind-load deploy`: release `profile` in `apps`, pod Running, HTTPRoute and SecurityPolicy Accepted
   (audience rendered as a string). Migration `0001_create_profiles` applied.
@@ -136,7 +137,7 @@ step 8 (`make up`/`reset`) is not.
   heatmap); saturation from kube-state-metrics and cAdvisor (replicas, restarts, CPU/memory per pod vs requests and
   limits, CPU throttling) and from the Go runtime instrumentation (profile-service now exports it); DB and pgx pool.
   Every query checked against Prometheus; loaded by the sidecar (provisioned, General folder).
-- Not covered: 401/403 rejected by Envoy (no Envoy PodMonitor yet), container logs.
+- Not covered: container logs. Requests rejected by Envoy are on the Gateway dashboard (see "Envoy gateway metrics").
 - Per-pod series: `service-lib` 0.3.0 sets `OTEL_RESOURCE_ATTRIBUTES` (`service.instance.id` and `k8s.pod.name` = pod
   name via the downward API, `k8s.namespace.name`), which becomes the Prometheus `instance` label. Before, replicas
   wrote into one series and counters looked like constant resets. Checked with 2 replicas: 100 requests through the
@@ -223,3 +224,34 @@ step 8 (`make up`/`reset`) is not.
   startup); later series had it.
 - Grafana Explore → Tempo → Service Graph not checked by clicking in the browser; its per-span RED table needs span
   metrics and stays empty.
+
+## service-lib tags, shared workflow, Envoy gateway metrics (2026-11-16)
+- service-lib releases get an annotated tag `service-lib-vX.Y.Z` on the commit that changes `Chart.yaml` (rule in
+  `CLAUDE.md` and the chart README). `service-lib-v0.5.0` is on `b70793e`; not pushed yet.
+- The feature workflow moved from profile-service's `CLAUDE.md` to `docs/workflow.md`, shared by every service
+  repository, with the service conventions (Go 1.27.4 baseline) and what each service must provide.
+- Envoy gateway metrics: PodMonitor `envoy-gateway-system/envoy-proxy` (pods `app.kubernetes.io/component=proxy`,
+  `app.kubernetes.io/managed-by=envoy-gateway`; container port `metrics` 19001, `/stats/prometheus`; every 15 s). Chosen
+  over Envoy Gateway's OTLP metrics sink: the endpoint already exists, its names were checked on the real output, and
+  it needs no change to Envoy or the collector. A keep-list drops all but the dashboard's metrics (about 280 series
+  instead of about 470 families); names are as Envoy exposes them, without `_total`.
+- Metrics, per listener (`envoy_http_conn_manager_prefix`, `http-10080` for the public listener; `admin`,
+  `eg-ready-http`, `eg-stats-http` and `async-client` are internal): `envoy_http_downstream_rq_xx`
+  (`envoy_response_code_class`), `envoy_http_downstream_rq_time_*` (milliseconds), `envoy_http_jwt_authn_denied`
+  (401 and 403), `_allowed` (also counts requests whose route needs no token, including unrouted ones), `_jwks_fetch_failed`,
+  `envoy_http_no_route` (404 for an unknown path or host). Per route rule (`envoy_cluster_name` =
+  `httproute/<ns>/<route>/rule/<n>`): `envoy_cluster_upstream_rq_xx`, `envoy_cluster_upstream_rq_time_*`, only for
+  requests forwarded to a backend.
+- Limit: Envoy counts JWT denials, unrouted requests and status classes per listener, and every host shares the one
+  listener, so rejections are not split by route or host; the class is known, the exact code (401 vs 403) is not.
+  Tempo's `public.edge` spans carry host and status if that is ever needed.
+- First requests: the listener counters (all five classes, `jwt_authn_*`, `no_route`) exist at 0 from the start, so
+  `rate()` counts every request. The per-route-rule class counters are created on first use (profile's cluster has no
+  class 5 series yet), and a text scrape carries no created timestamp, so the first response of a new class on a route
+  rule is not counted there; the listener panels still count it.
+- Gateway dashboard (`dashboards/gateway.json`, uid `gateway`, 13 panels): requests/s, 4xx/5xx share, share rejected at
+  the gateway, p95; responses by status class; JWT denied and no-route per second; p50/p95/p99; JWT checks and JWKS
+  fetch failures; per route rule upstream responses by class and p95. Every query checked against Prometheus.
+- Checked through Envoy: 10 requests without a token and 15 unrouted (10 unknown paths, 5 unknown host) →
+  `jwt_authn_denied` +10, `no_route` +15, class 4 +25, all requests +25. Gateway p95 for these local replies 0.5 ms.
+  Not checked by clicking in the browser.

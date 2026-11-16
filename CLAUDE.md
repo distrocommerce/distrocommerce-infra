@@ -9,7 +9,8 @@ Terraform for staging and production. Application services live in their own rep
 through the library chart.
 
 Read first: `docs/architecture.md` (decisions, placement per environment, pitfalls, open questions),
-`docs/local-environment.md` (step-by-step runbook), `docs/STATUS.md` (progress), `docs/diagrams/`.
+`docs/local-environment.md` (step-by-step runbook), `docs/STATUS.md` (progress), `docs/diagrams/`, and
+`docs/workflow.md` (the shared feature workflow and conventions for every service repository).
 
 ## Target
 Client → Envoy Gateway (Gateway API; always deployed in the cluster, in every environment; JWT validation; injects the
@@ -47,5 +48,8 @@ only the stateful stores. Staging/production: one EKS cluster plus AWS managed s
   stand-in (`k8s/dev/lib-test`) and with the first real service, `profile-service`. Step 8 (`make up`/`reset`) is not.
 - Images must have linux/arm64 builds (Apple silicon): check with `docker manifest inspect` before pinning a new tag.
 - Makefile recipes need tab indentation. Start order matters: the docker network `distro` (`DOCKER_NET` in the Makefile, passed to kind via `KIND_EXPERIMENTAL_DOCKER_NETWORK`) must exist before compose (see `make up`).
+- service-lib releases: every version bump gets an annotated tag `service-lib-vX.Y.Z` on the commit that changes
+  `charts/service-lib/Chart.yaml`. Service repositories check out that tag in CI, so a release is not done until the
+  tag exists. Create the tag locally; the user pushes tags.
 - Never commit secrets (`.env` is ignored). Passwords in local manifests are development-only.
 - All repository content, comments and commit messages are in English.

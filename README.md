@@ -3,7 +3,8 @@
 Infrastructure for DistroCommerce: the local environment (docker-compose stores, kind cluster with Envoy Gateway,
 ZITADEL and the observability stack), the shared Helm library chart, and later Terraform for staging and production.
 
-Start with `CLAUDE.md`, then `docs/architecture.md`, `docs/local-environment.md` and `docs/STATUS.md`.
+Start with `CLAUDE.md`, then `docs/architecture.md`, `docs/local-environment.md` and `docs/STATUS.md`. Service
+repositories follow the shared feature workflow and conventions in `docs/workflow.md`.
 
 ```
 compose/   docker-compose stores (PostgreSQL, Redis, MongoDB, Kafka KRaft)

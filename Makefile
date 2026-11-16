@@ -87,6 +87,7 @@ obs-up:
 	helm upgrade --install otel-collector oci://ghcr.io/open-telemetry/opentelemetry-helm-charts/opentelemetry-collector \
 	  --version $(OTEL_VERSION) -n observability -f k8s/observability/otel-values.yaml --wait
 	kubectl apply -f k8s/observability/grafana-route.yaml
+	kubectl apply -f k8s/observability/envoy-podmonitor.yaml   # needs envoy-gateway-system (step 3)
 	$(MAKE) dashboards
 
 # Grafana dashboards: one ConfigMap per JSON file in k8s/observability/dashboards/.

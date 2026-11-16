@@ -1,0 +1,22 @@
+# Scrapes the Envoy proxies that Envoy Gateway v1.9.3 deploys (container `envoy`, port `metrics` 19001,
+# /stats/prometheus; checked on the running pods). kps selects PodMonitors in every namespace
+# (podMonitorSelectorNilUsesHelmValues: false, empty namespace selector).
+# Only the series the Gateway dashboard uses are kept: Envoy exposes about 470 metric families per proxy.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: envoy-proxy
+  namespace: envoy-gateway-system
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: proxy
+      app.kubernetes.io/managed-by: envoy-gateway
+  podMetricsEndpoints:
+    - port: metrics
+      path: /stats/prometheus
+      interval: 15s   # same as the services' OTLP export interval
+      metricRelabelings:
+        - sourceLabels: [__name__]
+          action: keep
+          regex: envoy_http_downstream_rq_xx|envoy_http_downstream_rq_time_(bucket|count|sum)|envoy_http_jwt_authn_(allowed|denied|jwks_fetch_failed)|envoy_http_no_route|envoy_cluster_upstream_rq_xx|envoy_cluster_upstream_rq_time_(bucket|count|sum)|envoy_server_live
