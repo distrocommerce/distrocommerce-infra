@@ -23,6 +23,10 @@ prometheus:
     # the first requests of a new series (new pod, new route/status). Checked in the v3.16.0 source: the OTLP
     # handler passes the start time to TSDB (the feature-flag docs list only scrape protocols).
     enableOTLPReceiver: true
+    # Remote write is only for Tempo's metrics generator (traces_service_graph_*), which has no OTLP output. The
+    # collector does not use it. The generator writes a 0 sample before a new series' first value, so increase()
+    # counts first requests; only series created in the first collection after a Tempo restart can lose that 0.
+    enableRemoteWriteReceiver: true
     enableFeatures:
       - created-timestamp-zero-ingestion
     otlp:
@@ -58,7 +62,7 @@ grafana:
         nodeGraph:
           enabled: true
         serviceMap:
-          datasourceUid: prometheus   # needs Tempo's metrics generator (traces_service_graph_*), not enabled yet
+          datasourceUid: prometheus   # traces_service_graph_* from Tempo's metrics generator
         tracesToLogsV2:
           datasourceUid: loki
           spanStartTimeShift: "-1m"

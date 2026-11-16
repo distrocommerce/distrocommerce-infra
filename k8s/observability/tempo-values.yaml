@@ -15,6 +15,30 @@ tempo:
           endpoint: "0.0.0.0:4317"
         http:
           endpoint: "0.0.0.0:4318"
+  # Metrics generator: service graph only (traces_service_graph_*), sent to Prometheus' remote-write receiver
+  # (the only remote-write client; the collector uses OTLP). Span metrics stay off: the services' SDK metrics
+  # already carry RED per route and status. Database calls become a virtual node named after server.address
+  # (`postgres`), checked in the v3.1.1 source.
+  metricsGenerator:
+    enabled: true
+    remoteWriteUrl: http://kps-prometheus.observability.svc.cluster.local:9090/api/v1/write
+    storage:
+      path: /var/tempo/generator/wal   # on the PVC; the chart default /tmp/tempo is an emptyDir
+    processor:
+      service_graphs:
+        # otelpgx emits pool.acquire as a CLIENT span with db.* attributes, so Tempo would count it as a second
+        # profile -> postgres call (doubled rate, pool waits mixed into query latency). Proper fix in
+        # profile-service (follow-up): INTERNAL span kind or otelpgx WithDisableAcquireTracer().
+        filter_policies:
+          - exclude:
+              match_type: strict
+              attributes:
+                - key: name
+                  value: pool.acquire
+  overrides:
+    defaults:
+      metrics_generator:
+        processors: [service-graphs]
 persistence:
   enabled: true
   size: 5Gi

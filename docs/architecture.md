@@ -47,7 +47,7 @@ in `charts/service-lib/`. Services use gRPC between themselves; REST is served b
 | Services' PostgreSQL, Redis, MongoDB, Kafka | docker-compose | RDS/Aurora, ElastiCache, Atlas or DocumentDB (open), MSK |
 | Observability stack | kind, ns `observability` | cluster, ns `observability`; Tempo/Loki data in S3 |
 | Secrets | `.env` / K8s Secrets | External Secrets Operator + AWS Secrets Manager |
-| IaC / deploy | Makefile + Helm `values-local` | Terraform + Helm `values-staging/prod`, CI `helm upgrade --atomic` |
+| IaC / deploy | Makefile + Helm `values-local` | Terraform + Helm `values-staging/prod`, CI `helm upgrade --rollback-on-failure` |
 | Dev loop | Tilt or Skaffold (step 8, optional) | n/a |
 
 Diagrams: `docs/diagrams/deployment-local.md` ("Deployment diagram: Local (kind + docker-compose)") and

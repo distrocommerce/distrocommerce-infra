@@ -41,7 +41,7 @@ only the stateful stores. Staging/production: one EKS cluster plus AWS managed s
 
 ## How to work here
 - Follow the runbook one step at a time and run a step's checks before starting the next.
-- The configs are drafts that have never been run. Before relying on a Helm value key run `helm show values <chart>` for the
+- Before relying on a Helm value key run `helm show values <chart>` for the
   pinned chart version; before relying on a CRD field check the docs or `kubectl explain`. Say plainly when something is
   unverified instead of guessing. Steps 1-7 were run and verified (see `docs/STATUS.md`): the library chart with a
   stand-in (`k8s/dev/lib-test`) and with the first real service, `profile-service`. Step 8 (`make up`/`reset`) is not.

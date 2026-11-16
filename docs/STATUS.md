@@ -1,7 +1,7 @@
 # Local environment status
 
-Update this file as steps are completed. Everything below was designed in a chat session and **not yet
-run end to end**; configs for steps 1-7 are drafts to verify (chart value keys especially).
+Update this file as steps are completed. Steps 0-7 were run and verified on the local cluster (notes below);
+step 8 (`make up`/`reset`) is not.
 
 | Step | What | Status |
 |---|---|---|
@@ -20,7 +20,8 @@ run end to end**; configs for steps 1-7 are drafts to verify (chart value keys e
   `mongo:9.0`, `apache/kafka:4.4.0`. Running versions: PostgreSQL 18.6, Redis 8.10.3, MongoDB 9.0.4, Kafka 4.4.0.
 - `make infra-up`: all four services `healthy`. Databases/roles created: inventory, notification, order, payment,
   product, profile. Redis PONG, Mongo ping ok, Kafka topic list ok (empty). `postgres`, `redis`, `mongo`, `kafka`
-  resolve on the docker network `kind`.
+  resolve on the docker network `kind` (since renamed to `distro`, see below; step 7's profile-service reaches
+  `postgres` on it).
 - Fixed: `postgres-init/01-databases.sh` failed on `CREATE ROLE order` (reserved word); identifiers are now quoted.
 - Follow-up: the Kafka healthcheck uses `kafka-broker-api-versions.sh`, deprecated in 4.4 in favour of
   `kafka-cluster.sh api-versions`. It still works.
@@ -32,7 +33,7 @@ run end to end**; configs for steps 1-7 are drafts to verify (chart value keys e
 
 ## Step 2 notes (2026-11-08)
 - Host ports changed from 80/443 to 8080/8443 (`kind/kind.yaml`, `make doctor`, docs). Local URLs and the ZITADEL
-  issuer now need `:8080`; steps 3-6 files are not updated yet.
+  issuer now need `:8080`.
 - `make cluster-up` with kind v0.31.0 (node image `kindest/node:v1.35.0`, kind's default; now pinned by digest in
   `kind.yaml`, see "Image pins").
   kind printed the expected `KIND_EXPERIMENTAL_DOCKER_NETWORK` warning and put `distro-control-plane` on the `distro`
@@ -144,10 +145,11 @@ run end to end**; configs for steps 1-7 are drafts to verify (chart value keys e
   `increase()`/`rate()` missed them (every new pod and route/status; a route's first 5xx was invisible). Metrics now go
   collector → Prometheus OTLP receiver (`enableOTLPReceiver`, translation `UnderscoreEscapingWithSuffixes`, so names
   are unchanged) with `created-timestamp-zero-ingestion`, which writes a 0 sample at each point's start time
-  (OTLP support checked in the v3.16.0 source; the docs list only scrape protocols). `service-lib` 0.4.0 sets
+  (OTLP support checked in the v3.16.0 source; the docs list only scrape protocols). `service-lib` 0.5.0 sets
   `OTEL_GO_X_PER_SERIES_START_TIMESTAMPS=true` (Go SDK v1.47, experimental) so a series starts at its first
   measurement, not at process start. Checked: new 200 and 405 series on a running pod, 30 and 7 requests →
-  `increase([2m])` 35 and 8.2 (extrapolated; 0 before), raw samples start with 0. Remote-write receiver disabled.
+  `increase([2m])` 35 and 8.2 (extrapolated; 0 before), raw samples start with 0. Remote-write receiver disabled (re-enabled later only for Tempo's
+  metrics generator, see "Tempo service graph").
   OTLP series no longer carry `otel_scope_*` labels.
 
 ## Image pins (2026-11-14)
@@ -196,4 +198,28 @@ run end to end**; configs for steps 1-7 are drafts to verify (chart value keys e
   router, profile `GET /v1/users/me`, `pool.acquire`, `SELECT`. The trace-to-logs query returns its one log line
   (span_id = profile's server span); that line's `trace_id` arrives as structured metadata (label type S) and looks up
   the same trace (5 spans). Trace-to-metrics queries return data. Not checked by clicking in the browser.
-- Service Graph: configured, but no `traces_service_graph_*` series (Tempo's metrics generator is deferred).
+- Service Graph: configured here; enabled on 2026-11-16, see "Tempo service graph".
+
+## Tempo service graph (2026-11-16)
+- Tempo's metrics generator is on with the `service-graphs` processor only (`tempo.metricsGenerator`,
+  `tempo.overrides.defaults.metrics_generator.processors`; chart 3.2.1 keys checked with `helm show values` and
+  `helm template`). WAL in `/var/tempo/generator/wal` (PVC). It writes `traces_service_graph_*` over remote write, so
+  Prometheus' remote-write receiver is back on (`enableRemoteWriteReceiver`), used only by Tempo; the collector stays
+  on OTLP. Span metrics stay off: they would duplicate the services' SDK RED metrics.
+- `pool.acquire` is emitted as a CLIENT span by otelpgx (v0.13.0, kind hardcoded), so it would double the database
+  edge and mix pool waits into its latency; the generator excludes it (`filter_policies`, intrinsic `name`). Follow-up
+  for profile-service: make it INTERNAL or turn it off with otelpgx `WithDisableAcquireTracer()`, then drop the filter.
+- Checked through Envoy: 10 requests without a token (401 at Envoy) and 20 with a token (404 profile_not_found).
+  Edges (`traces_service_graph_request_total`, plus `_failed_total` and the client/server seconds histograms):
+  `client="user", server="public.edge", connection_type="virtual_node"` 20;
+  `client="public.edge", server="profile"` (no connection_type) 20, all 20 also in `_failed_total`;
+  `client="profile", server="postgres", connection_type="database"` 21 (20 queries plus one statement prepare on a new
+  connection; about 41 without the filter). The database node name comes from `server.address`.
+- Failed edges: Tempo marks an edge failed if either span is Error. Envoy's router span is a CLIENT span and is Error
+  for the 404 (OTel semconv: 4xx is an error on the client side), so the graph's error rate for Envoy → service
+  includes 4xx; the dashboards' 5xx panels use the SDK metrics.
+- New series start with a 0 sample at the end of the previous minute, so `increase()` counts first requests. The series
+  created in the first collection after the Tempo restart lost its 0 (remote write logged `error tailing WAL` at
+  startup); later series had it.
+- Grafana Explore → Tempo → Service Graph not checked by clicking in the browser; its per-span RED table needs span
+  metrics and stays empty.

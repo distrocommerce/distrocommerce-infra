@@ -1,4 +1,4 @@
-# DistroCommerce local environment. Draft: not yet run end to end, verify each target.
+# DistroCommerce local environment. The component targets were run in steps 1-7; up/reset (step 8) are not verified.
 # Order matters: infra-up creates the docker network "$(DOCKER_NET)" before the cluster is created.
 
 # Own docker network so other kind-based projects do not share it (or hostnames like postgres).

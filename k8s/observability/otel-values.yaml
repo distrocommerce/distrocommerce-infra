@@ -24,7 +24,8 @@ config:
       tls: {insecure: true}
     otlp_http/loki:
       endpoint: http://loki.observability.svc.cluster.local:3100/otlp
-    # Prometheus' native OTLP receiver (the exporter appends /v1/metrics).
+    # Prometheus' native OTLP receiver (the exporter appends /v1/metrics). The collector does not use remote write;
+    # Prometheus' remote-write receiver is on only for Tempo's metrics generator.
     otlp_http/prometheus:
       endpoint: http://kps-prometheus.observability.svc.cluster.local:9090/api/v1/otlp
   service:

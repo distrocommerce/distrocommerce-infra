@@ -1,7 +1,7 @@
 # Local environment runbook (macOS, Docker Desktop, kind)
 
 Run everything from the root of this repo. Configs live in `compose/`, `kind/`, `k8s/`, `charts/`.
-Do each step, run its checks, then go on. Chart value keys are drafts: compare with `helm show values`.
+Do each step, run its checks, then go on. Check new chart value keys with `helm show values` for the pinned version.
 
 ## Step 0. Tools
 - Docker Desktop: Settings → Resources: 8 CPUs, 16 GB RAM, 1-2 GB swap, 60 GB disk (ceilings, not reservations).
@@ -97,10 +97,17 @@ Files: `k8s/observability/*`. Charts are pulled as OCI from ghcr.io and pinned i
 - Data sources have fixed UIDs `prometheus`, `tempo`, `loki` and are linked (`kps-values.yaml`): Tempo span → Loki logs
   (`{service_name="<service>"} | trace_id="<id>"`; in OTLP logs `trace_id`/`span_id` are structured metadata, not
   part of the line), span → Prometheus request rate and p95 (`job` = service name), Loki line → Tempo trace (derived
-  field on `trace_id`). Tempo's Service Graph tab stays empty until Tempo's metrics generator is enabled. Link
-  variables are written `$${...}` in the values, because Grafana expands `${...}` in provisioning files.
+  field on `trace_id`). Link variables are written `$${...}` in the values, because Grafana expands `${...}` in provisioning files.
 - Metrics path: collector → Prometheus' OTLP receiver (`/api/v1/otlp`), not remote write, with
   `created-timestamp-zero-ingestion`, so the first requests of a new series are counted (see `kps-values.yaml`).
+  Prometheus' remote-write receiver is on only for Tempo's metrics generator.
+- Service graph: Grafana → Explore → Tempo → Service Graph (or the node graph of a trace's service). It needs Tempo's
+  metrics generator with the `service-graphs` processor (`tempo-values.yaml`), which writes `traces_service_graph_*`
+  to Prometheus over remote write (`enableRemoteWriteReceiver`). Edges appear after a request and the generator's
+  `wait` (10 s). A request through Envoy: `user` → `public.edge` → `profile` → `postgres` (database calls are a
+  virtual node named after `server.address`). An edge counts as failed when either span has status Error; Envoy's
+  router span is a CLIENT span and is Error for any 4xx/5xx, so `public.edge` → `profile` errors include 4xx.
+  Span metrics are off, so the per-span RED table under the graph stays empty; the dashboards use the SDK metrics.
 - Dashboards: JSON files in `k8s/observability/dashboards/`; `make dashboards` (also run by `obs-up`) applies each as a
   ConfigMap labeled `grafana_dashboard=1`, which the Grafana sidecar loads. Edit the JSON and rerun `make dashboards`;
   changes made in the Grafana UI are lost when the pod restarts.
