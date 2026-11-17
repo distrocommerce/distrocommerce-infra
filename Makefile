@@ -15,16 +15,25 @@ TEMPO_VERSION         ?= 3.2.1
 LOKI_VERSION          ?= 21.1.1
 OTEL_VERSION          ?= 0.178.2
 
-.PHONY: doctor up reset infra-up infra-down infra-reset cluster-up cluster-down edge-up auth-up obs-up dashboards db-secrets
+.PHONY: doctor ci-versions up reset infra-up infra-down infra-reset cluster-up cluster-down edge-up auth-up obs-up dashboards db-secrets
 
 doctor: ## run before the cluster exists (ports 8080/8443 must be free)
 	@for t in docker kind kubectl helm make jq psql; do \
 	  command -v $$t >/dev/null || { echo "MISSING: $$t"; exit 1; }; \
 	done
 	@docker compose version >/dev/null || { echo "MISSING: docker compose v2"; exit 1; }
+	@# Optional: the CI checks (.github/workflows/ci.yml) run locally.
+	@for t in yq kubeconform yamllint shellcheck actionlint; do \
+	  command -v $$t >/dev/null || echo "optional, missing: $$t (brew install $$t)"; \
+	done
 	@! lsof -nP -iTCP:8080 -sTCP:LISTEN >/dev/null 2>&1 || { echo "port 8080 busy"; exit 1; }
 	@! lsof -nP -iTCP:8443 -sTCP:LISTEN >/dev/null 2>&1 || { echo "port 8443 busy"; exit 1; }
 	@echo "tools ok"
+
+# CI generates the CRD schemas from the same chart versions (NAME=value lines for $GITHUB_ENV).
+ci-versions:
+	@echo EG_VERSION=$(EG_VERSION)
+	@echo KPS_VERSION=$(KPS_VERSION)
 
 up: infra-up cluster-up edge-up auth-up obs-up db-secrets
 

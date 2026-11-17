@@ -26,6 +26,8 @@ service provides the equivalents listed under "What each service provides".
 - **Commits**: never commit secrets; everything in English; no AI attribution. Never commit without the user's
   approval: propose the files and the message, then wait. One approval covers one commit. Logical steps on `main`;
   push only when asked.
+- **CI**: every repository, service or this one, runs CI on push to `main` and on pull requests. A change counts as
+  done only when CI on the pushed commit is green.
 
 ## What each service provides
 
@@ -56,8 +58,8 @@ passed with `--set-string` instead of being committed.
    `deploy/chart`, no edits to this repository from a service repository; if `service-lib` cannot express something,
    stop and describe the change).
 4. **technical checks**: the service's checks (e.g. `make test lint`); after changing SQL, migrations or other store
-   code, also the integration tests with the service's test variable (e.g. `PROFILE_TEST_DATABASE_URL`). Planned:
-   kubeconform, kube-linter, Trivy.
+   code, also the integration tests with the service's test variable (e.g. `PROFILE_TEST_DATABASE_URL`). Planned for
+   services: kubeconform, kube-linter, Trivy (this repository's CI already runs kubeconform).
 5. **verify-change** (`/openspec-verify-change`): AI audit of the code and configs against `specs/` and `design.md`,
    with CRITICAL, WARNING and SUGGESTION findings. Spec gaps go back to step 2, code gaps to step 3, then step 4 again.
 6. **code review**: `/code-review` (plus `/security-review` when identity, request parsing or secrets are touched),
@@ -81,6 +83,6 @@ passed with `--set-string` instead of being committed.
     Envoy.
 
 Later:
-- Branch + PR workflow with CI on push: a change is done only when CI is green (wait for it before merge).
+- Branch + PR workflow: CI already runs on pull requests; wait for it to be green before merge.
 - Tilt (makes steps 7 and 11 automatic).
 - GitOps deploy (Argo CD).

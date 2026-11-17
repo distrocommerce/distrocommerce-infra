@@ -1,5 +1,7 @@
 # distrocommerce-infra
 
+[![CI](https://github.com/distrocommerce/distrocommerce-infra/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/distrocommerce/distrocommerce-infra/actions/workflows/ci.yml)
+
 Infrastructure for DistroCommerce: the local environment (docker-compose stores, kind cluster with Envoy Gateway,
 ZITADEL and the observability stack), the shared Helm library chart, and later Terraform for staging and production.
 
@@ -13,4 +15,5 @@ k8s/       Envoy Gateway, ZITADEL, observability values and manifests, dev test 
 charts/    Helm library chart service-lib
 terraform/ staging and production (later)
 docs/      architecture, runbook, status, diagrams
+.github/   CI checks (no deploy)
 ```

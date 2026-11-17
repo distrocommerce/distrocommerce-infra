@@ -1,0 +1,10 @@
+# yamllint for k8s/, kind/ and compose/ (run in CI). Relaxed: syntax errors, duplicate keys and broken indentation
+# fail; style issues are warnings. Long lines are fine (comments and URLs).
+extends: relaxed
+
+rules:
+  line-length: disable
+
+ignore: |
+  k8s/dev/lib-test/templates/
+  **/charts/

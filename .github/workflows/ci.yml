@@ -1,0 +1,215 @@
+# Checks only: nothing is deployed and no cluster is created.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash # -eo pipefail
+
+env:
+  HELM_VERSION: v4.3.1
+  KUBERNETES_VERSION: 1.35.0 # the kind node (kindest/node:v1.35.0 in kind/kind.yaml)
+  KUBECONFORM_VERSION: v0.8.0
+  KUBECONFORM_SHA256: 9bc2bffbf71f261128533edaf912153948b7ff238f9a531ae6d34466ec287883 # kubeconform-linux-amd64.tar.gz
+  OPENAPI2JSONSCHEMA_SHA256: d145babfbb765004030764e1b4e518bfb7a4bd7f111691a08fa57983b81881f3 # scripts/openapi2jsonschema.py at KUBECONFORM_VERSION
+  PYYAML_VERSION: 6.0.3
+  YAMLLINT_VERSION: 1.38.0
+  SHELLCHECK_VERSION: v0.11.0
+  SHELLCHECK_SHA256: 8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198 # shellcheck-v0.11.0.linux.x86_64.tar.xz
+
+jobs:
+  service-lib:
+    name: service-lib (render lib-test, assertions, failure cases)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: ${{ env.HELM_VERSION }}
+      # The audience is a dummy: the real ZITADEL project ID is passed at install time and never committed.
+      - name: helm lint and template
+        run: |
+          helm dependency update k8s/dev/lib-test
+          helm lint k8s/dev/lib-test --set-string 'auth.audiences={123}'
+          helm template lib-test k8s/dev/lib-test --set-string 'auth.audiences={123}' > auth-on.yaml
+          helm template lib-test k8s/dev/lib-test --set-string 'auth.audiences={123}' --set auth.enabled=false > auth-off.yaml
+      # yq (mikefarah v4) is preinstalled on the GitHub-hosted Ubuntu runners.
+      - name: assertions on the rendered output
+        run: |
+          fail=0
+          check() { # file, description, yq expression that must be true
+            if yq ea -e "$3" "$1" >/dev/null; then echo "ok: $2"; else echo "::error::$1: $2"; fail=1; fi
+          }
+          # a) security defaults, and lib-test's podSecurityContext.runAsUser merged over them
+          check auth-on.yaml "one Deployment" '[select(.kind == "Deployment")] | length == 1'
+          check auth-on.yaml "pod: runAsNonRoot, seccomp RuntimeDefault, runAsUser 65532 merged" \
+            '[select(.kind == "Deployment") | .spec.template.spec.securityContext
+              | (.runAsNonRoot == true and .seccompProfile.type == "RuntimeDefault" and .runAsUser == 65532)] | (length == 1 and all)'
+          check auth-on.yaml "containers: readOnlyRootFilesystem, no privilege escalation, drop ALL" \
+            '[select(.kind == "Deployment") | .spec.template.spec.containers[] | .securityContext
+              | (.readOnlyRootFilesystem == true and .allowPrivilegeEscalation == false
+                 and (.capabilities.drop | length) == 1 and .capabilities.drop[0] == "ALL")] | (length > 0 and all)'
+          # b) auth on: Envoy validates the JWT and sets x-user-id from sub; the route must not remove it
+          check auth-on.yaml "one HTTPRoute" '[select(.kind == "HTTPRoute")] | length == 1'
+          check auth-on.yaml "SecurityPolicy on the HTTPRoute with issuer and audience" \
+            '[select(.kind == "SecurityPolicy")
+              | (.spec.targetRefs[0].kind == "HTTPRoute" and .spec.targetRefs[0].name == "lib-test"
+                 and (.spec.jwt.providers | length) == 1
+                 and .spec.jwt.providers[0].issuer == "http://auth.localtest.me:8080"
+                 and (.spec.jwt.providers[0].audiences | length) == 1 and .spec.jwt.providers[0].audiences[0] == "123")]
+              | (length == 1 and all)'
+          check auth-on.yaml "no RequestHeaderModifier on the HTTPRoute" \
+            '[select(.kind == "HTTPRoute") | .spec.rules[].filters[] | select(.type == "RequestHeaderModifier")] | length == 0'
+          # c) auth off: no SecurityPolicy, and the route drops a client-sent x-user-id
+          check auth-off.yaml "no SecurityPolicy" '[select(.kind == "SecurityPolicy")] | length == 0'
+          check auth-off.yaml "HTTPRoute removes x-user-id (lib-test has one rule)" \
+            '[select(.kind == "HTTPRoute") | .spec.rules[].filters[] | select(.type == "RequestHeaderModifier")
+              | .requestHeaderModifier.remove[] | select(. == "x-user-id")] | length == 1'
+          exit "$fail"
+      # Each case must fail to render, and with its own message (not, say, a missing dependency).
+      - name: invalid values must not render
+        run: |
+          fail=0
+          must_fail() { # expected message, helm template flags...
+            local want=$1 out
+            shift
+            if out=$(helm template lib-test k8s/dev/lib-test "$@" 2>&1); then
+              echo "::error::rendered, but must fail: $*"; fail=1
+            elif ! grep -qF -- "$want" <<<"$out"; then
+              echo "::error::failed, but not with \"$want\": $*"; echo "$out"; fail=1
+            else
+              echo "ok: fails with \"$want\": ${*:-(no flags)}"
+            fi
+          }
+          must_fail "auth.audiences is required"
+          must_fail "auth.audiences entries must be quoted strings" --set 'auth.audiences={123}'
+          must_fail "auth.issuer is required" --set-string 'auth.audiences={123}' --set auth.issuer=null
+          must_fail "env.POD_NAME is set by service-lib" --set-string 'auth.audiences={123}' --set env.POD_NAME=x
+          exit "$fail"
+
+  manifests:
+    name: manifests (kubeconform, Kubernetes 1.35 + CRDs)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: ${{ env.HELM_VERSION }}
+      # EG_VERSION and KPS_VERSION come from the Makefile, so the schemas match the charts that are installed.
+      - name: chart versions from the Makefile
+        run: |
+          make -s ci-versions | tee -a "$GITHUB_ENV"
+          echo "CRD_SCHEMAS=$HOME/.cache/ci-schemas/crds" >> "$GITHUB_ENV"
+          echo "KUBECONFORM_CACHE=$HOME/.cache/ci-schemas/kubernetes" >> "$GITHUB_ENV"
+      # CRD schemas and kubeconform's download cache of the Kubernetes schemas. The key names everything they depend
+      # on, so a version bump in the Makefile regenerates them. A cache entry is never updated: a kind that is new to
+      # the manifests is downloaded on every run until one of the versions changes.
+      - name: cache schemas
+        id: cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ci-schemas
+          key: schemas-eg-${{ env.EG_VERSION }}-kps-${{ env.KPS_VERSION }}-k8s-${{ env.KUBERNETES_VERSION }}-kubeconform-${{ env.KUBECONFORM_VERSION }}
+      - name: install kubeconform
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/kubeconform.tar.gz" \
+            "https://github.com/yannh/kubeconform/releases/download/$KUBECONFORM_VERSION/kubeconform-linux-amd64.tar.gz"
+          echo "$KUBECONFORM_SHA256  $RUNNER_TEMP/kubeconform.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/kubeconform.tar.gz" -C "$RUNNER_TEMP" kubeconform
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+      # Gateway API and Envoy Gateway CRDs ship with gateway-helm, PodMonitor with kube-prometheus-stack (same OCI
+      # charts as the Makefile). Converted with kubeconform's openapi2jsonschema.py; generated files are not committed.
+      - name: generate CRD schemas
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p "$CRD_SCHEMAS" "$KUBECONFORM_CACHE"
+          helm show crds oci://docker.io/envoyproxy/gateway-helm --version "$EG_VERSION" > "$RUNNER_TEMP/crds-eg.yaml"
+          helm show crds oci://ghcr.io/prometheus-community/charts/kube-prometheus-stack --version "$KPS_VERSION" \
+            > "$RUNNER_TEMP/crds-kps.yaml"
+          curl -fsSL -o "$RUNNER_TEMP/openapi2jsonschema.py" \
+            "https://raw.githubusercontent.com/yannh/kubeconform/$KUBECONFORM_VERSION/scripts/openapi2jsonschema.py"
+          echo "$OPENAPI2JSONSCHEMA_SHA256  $RUNNER_TEMP/openapi2jsonschema.py" | sha256sum -c -
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet "pyyaml==$PYYAML_VERSION"
+          cd "$CRD_SCHEMAS"
+          FILENAME_FORMAT='{fullgroup}_{kind}_{version}' \
+            "$RUNNER_TEMP/venv/bin/python" "$RUNNER_TEMP/openapi2jsonschema.py" \
+            "$RUNNER_TEMP/crds-eg.yaml" "$RUNNER_TEMP/crds-kps.yaml" > /dev/null
+          ls "$CRD_SCHEMAS"
+      - name: render lib-test
+        run: |
+          helm dependency update k8s/dev/lib-test
+          mkdir -p "$RUNNER_TEMP/rendered"
+          helm template lib-test k8s/dev/lib-test --set-string 'auth.audiences={123}' > "$RUNNER_TEMP/rendered/lib-test-auth-on.yaml"
+          helm template lib-test k8s/dev/lib-test --set-string 'auth.audiences={123}' --set auth.enabled=false \
+            > "$RUNNER_TEMP/rendered/lib-test-auth-off.yaml"
+      # Plain manifests only: Helm values files (*values.yaml) and the lib-test chart sources are not manifests (the
+      # chart is validated through its render above); kind/kind.yaml is kind's own config, not a Kubernetes object.
+      # Every kind has a schema, so nothing is skipped: a resource without one is an error.
+      - name: kubeconform
+        run: |
+          mapfile -t files < <(find k8s -name '*.yaml' ! -name '*values.yaml' ! -path 'k8s/dev/lib-test/*' | sort)
+          printf '%s\n' "${files[@]}"
+          kubeconform -strict -summary \
+            -kubernetes-version "$KUBERNETES_VERSION" \
+            -cache "$KUBECONFORM_CACHE" \
+            -schema-location default \
+            -schema-location "$CRD_SCHEMAS/{{.Group}}_{{.ResourceKind}}_{{.ResourceAPIVersion}}.json" \
+            "${files[@]}" "$RUNNER_TEMP"/rendered/*.yaml
+
+  compose:
+    name: compose (docker compose config)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Same flags as the Makefile; the external network "distro" does not have to exist for `config`.
+      - run: |
+          cp compose/.env.example compose/.env
+          docker compose -f compose/compose.yaml --env-file compose/.env config -q
+
+  lint:
+    name: lint (yamllint, dashboard JSON, shellcheck)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: yamllint (.yamllint.yaml)
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet "yamllint==$YAMLLINT_VERSION"
+          "$RUNNER_TEMP/venv/bin/yamllint" --format github k8s kind compose
+      - name: dashboards are valid JSON
+        run: |
+          for f in k8s/observability/dashboards/*.json; do
+            jq empty "$f"
+            echo "ok: $f"
+          done
+      - name: shellcheck
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/shellcheck.tar.xz" \
+            "https://github.com/koalaman/shellcheck/releases/download/$SHELLCHECK_VERSION/shellcheck-$SHELLCHECK_VERSION.linux.x86_64.tar.xz"
+          echo "$SHELLCHECK_SHA256  $RUNNER_TEMP/shellcheck.tar.xz" | sha256sum -c -
+          tar -xJf "$RUNNER_TEMP/shellcheck.tar.xz" -C "$RUNNER_TEMP"
+          git ls-files -z '*.sh' | xargs -0 --no-run-if-empty "$RUNNER_TEMP/shellcheck-$SHELLCHECK_VERSION/shellcheck"

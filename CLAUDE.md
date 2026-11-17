@@ -27,6 +27,8 @@ only the stateful stores. Staging/production: one EKS cluster plus AWS managed s
 - `terraform/`: staging and production (not started)
 - `docs/`: architecture, runbook, status, diagrams
 - `Makefile`: `doctor`, `up`, `reset` and per-component targets
+- `.github/workflows/ci.yml`: CI checks (service-lib renders, kubeconform, compose config, yamllint, shellcheck); no
+  deploy
 
 ## Fixed decisions (do not reopen unless asked)
 - Local ingress uses kind `extraPortMappings` (host 8080/8443 to NodePort 30080/30443). No cloud-provider-kind.
@@ -51,5 +53,9 @@ only the stateful stores. Staging/production: one EKS cluster plus AWS managed s
 - service-lib releases: every version bump gets an annotated tag `service-lib-vX.Y.Z` on the commit that changes
   `charts/service-lib/Chart.yaml`. Service repositories check out that tag in CI, so a release is not done until the
   tag exists. Create the tag locally; the user pushes tags.
+- CI runs on every push to `main` and every pull request. A change counts as done only when CI on the pushed commit
+  is green; a red run is fixed before anything else. The same checks run locally with the tools `make doctor` lists as
+  optional. CI reads `EG_VERSION` and `KPS_VERSION` from the Makefile (`make ci-versions`) to generate the CRD
+  schemas, so a chart bump there is validated against the new CRDs.
 - Never commit secrets (`.env` is ignored). Passwords in local manifests are development-only.
 - All repository content, comments and commit messages are in English.

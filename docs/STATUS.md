@@ -228,7 +228,7 @@ step 8 (`make up`/`reset`) is not.
 
 ## service-lib tags, shared workflow, Envoy gateway metrics (2026-11-16)
 - service-lib releases get an annotated tag `service-lib-vX.Y.Z` on the commit that changes `Chart.yaml` (rule in
-  `CLAUDE.md` and the chart README). `service-lib-v0.5.0` is on `b70793e`; not pushed yet.
+  `CLAUDE.md` and the chart README). `service-lib-v0.5.0` is on `b70793e` (pushed).
 - The feature workflow moved from profile-service's `CLAUDE.md` to `docs/workflow.md`, shared by every service
   repository, with the service conventions (Go 1.27.4 baseline) and what each service must provide.
 - Envoy gateway metrics: PodMonitor `envoy-gateway-system/envoy-proxy` (pods `app.kubernetes.io/component=proxy`,
@@ -256,3 +256,37 @@ step 8 (`make up`/`reset`) is not.
 - Checked through Envoy: 10 requests without a token and 15 unrouted (10 unknown paths, 5 unknown host) →
   `jwt_authn_denied` +10, `no_route` +15, class 4 +25, all requests +25. Gateway p95 for these local replies 0.5 ms.
   Not checked by clicking in the browser.
+
+## CI (2026-11-17)
+- `.github/workflows/ci.yml` on push to `main` and on pull requests; checks only, nothing deployed. Same basics as
+  profile-service: `contents: read`, superseded runs cancelled, actions pinned to commit SHAs, `persist-credentials:
+  false`, Helm v4.3.1. Downloaded tools are pinned and checked by SHA-256 (kubeconform v0.8.0, shellcheck v0.11.0,
+  kubeconform's `openapi2jsonschema.py`); yamllint 1.38.0 and PyYAML 6.0.3 from PyPI in a venv; yq is the runner's.
+- **service-lib**: `helm lint` and `helm template` of `k8s/dev/lib-test` (dummy audience `123`). Asserted with yq:
+  pod `runAsNonRoot`, seccomp `RuntimeDefault` and lib-test's `runAsUser` merged over them; containers with read-only
+  root filesystem, no privilege escalation, drop ALL; auth on: one SecurityPolicy on the HTTPRoute with issuer and
+  audience, no `RequestHeaderModifier`; auth off: no SecurityPolicy, the route removes `x-user-id`. Four values must
+  fail to render, each with its own message: no audiences, an unquoted numeric audience, no issuer, `env.POD_NAME`.
+- **manifests**: kubeconform `-strict` against Kubernetes 1.35.0 (the kind node) for the 9 plain manifests in `k8s/`
+  and both lib-test renders (23 resources). CRD schemas are generated in CI from the pinned charts, with the versions
+  read from the Makefile (`make ci-versions`): Gateway API and Envoy Gateway CRDs from gateway-helm `EG_VERSION`,
+  PodMonitor from kube-prometheus-stack `KPS_VERSION`. Not committed; cached (`actions/cache`) under a key of the
+  chart, Kubernetes and kubeconform versions, together with kubeconform's download cache of the Kubernetes schemas.
+  Every kind has a schema, so nothing is skipped (no `-ignore-missing-schemas`). Not validated: Helm values files,
+  chart sources (only their render), `kind/kind.yaml` (kind's own config).
+- **compose**: `docker compose config` with `.env.example`.
+- **lint**: yamllint (`.yamllint.yaml`: relaxed, no line length, Go templates ignored) on `k8s/`, `kind/`,
+  `compose/`; `jq empty` on the dashboards; shellcheck on every tracked `*.sh`.
+- Checked locally before the first push (Homebrew tools, the workflow's own `run:` blocks): all jobs pass;
+  kubeconform rejects an unknown field in a Deployment and a SecurityPolicy; the assertions fail on swapped auth
+  renders and on overridden security defaults. actionlint 1.7.12 is clean. Not checked locally: the runs on GitHub
+  (runner yq and Python, the downloads, the cache).
+- Not checked by CI: anything needing a cluster (`make up`/`reset`, CRD versions actually installed), the observability
+  values files (only yamllint), Makefile recipes.
+- Planned before staging:
+  - kube-linter on the lib-test render. With its default checks only `unset-cpu-requirements` and
+    `unset-memory-requirements` fail today (service-lib has no default resources); exclude them for local values and
+    enforce them for staging values.
+  - Release tag check: a workflow on `service-lib-v*` tags that fails when the tag does not match `version` in
+    `charts/service-lib/Chart.yaml` at that commit, plus a warning (not a failure) on `main` while the current version
+    has no tag, since the tag is created after the commit.
